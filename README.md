@@ -57,5 +57,11 @@ PIKI-Infra/
 - [ ] 서비스별 조립 매니페스트
 
 ### 개발 규약 공통화
-- [ ] 커밋 규약·commit-msg 훅 SSOT 화 + 각 repo 배선
-- [ ] 배선 메커니즘 (공통 자산을 각 repo 로 동기화·drift 감지)
+- [x] commit-msg 훅 SSOT 화 (`hooks/commit-msg`) + 자기 배선 (SessionStart cp)
+- [x] 배선 메커니즘 결정: **원격 fetch** — 소비 repo 의 SessionStart 가 `gh api` 로 정본을
+      받아 `$(git rev-parse --git-common-dir)/hooks` 에 설치. 복사본 체크인 0(진짜 SSOT),
+      worktree 안전, 실패 시 기존 설치본 유지. **배선이 서면 기존 복사본은 SSOT 를
+      어긋나게 하는 잔재이므로 삭제한다** (이관의 일부).
+- [ ] 소비 repo 배선: extractor PR [#1](https://github.com/TeamPiKi/PIKI-Extractor/pull/1) ·
+      server (진행 중: fetch 전환 + 체크인 훅 삭제 + 스킬 타입 열거 제거) ·
+      headless (**보류**: 로컬에 타 세션 미푸시 커밋 [ahead 7], 정리 후 배선)
