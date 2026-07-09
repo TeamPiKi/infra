@@ -1,6 +1,6 @@
-# PIKI-Infra
+# infra
 
-PIKI 네 repo(PIKI-Server / PIKI-Extractor / PIKI-HeadlessBrowser / PIKI-Infra)에
+PIKI 네 repo(core / extractor / renderer / infra)에
 걸치는 **공통 자산의 SSOT**. 두 갈래를 담는다.
 
 - **배포 공통화** — 배포 계약·공유 블록·조립 매니페스트 (블록식 조립)
@@ -34,7 +34,7 @@ SSM in-box)이며, 이는 얇은 transport 어댑터로 분리한다.
 ## 구조
 
 ```
-PIKI-Infra/
+infra/
   install.sh     # 공통 자산 설치기 (정본) — 자산 목록·설치 위치·실패 처리를 여기만 안다
   conventions/   # 규약 (이미 통일된 기준선 + 이 repo 자산의 작성 규칙)
     infra.md     # terraform state·컨테이너 배포단위·네트워크 격리 (등급 A)
@@ -66,6 +66,5 @@ PIKI-Infra/
       알아, 자산이 늘어도 소비 repo 는 무변경. 복사본 체크인 0, worktree 안전
       (`git-common-dir`), 실패 시 기존 설치본 유지. **배선이 서면 기존 복사본은 SSOT 를
       어긋나게 하는 잔재이므로 삭제한다** (이관의 일부).
-- [ ] 소비 repo 배선: extractor PR [#1](https://github.com/TeamPiKi/PIKI-Extractor/pull/1) ·
-      server (진행 중: fetch 전환 + 체크인 훅 삭제 + 스킬 타입 열거 제거) ·
-      headless (**보류**: 로컬에 타 세션 미푸시 커밋 [ahead 7], 정리 후 배선)
+- [x] 소비 repo 배선: extractor(PR #1 머지) · core(PR #711 머지, 체크인 훅 삭제 + 스킬 타입
+      열거 제거 포함) · renderer 만 **보류**(로컬에 타 세션 미푸시 커밋, 정리 후 배선)
