@@ -35,6 +35,7 @@ SSM in-box)이며, 이는 얇은 transport 어댑터로 분리한다.
 
 ```
 PIKI-Infra/
+  install.sh     # 공통 자산 설치기 (정본) — 자산 목록·설치 위치·실패 처리를 여기만 안다
   conventions/   # 규약 (이미 통일된 기준선 + 이 repo 자산의 작성 규칙)
     infra.md     # terraform state·컨테이너 배포단위·네트워크 격리 (등급 A)
     blocks.md    # 블록 작성 원칙 (실행위치 중립·값 미소유·종료코드·셀프검증)
@@ -42,6 +43,7 @@ PIKI-Infra/
     health.md    # 헬스체크 계약 (첫 통일 대상)
   blocks/        # 실행 위치 중립 공유 스크립트 (순수 bash)
     healthcheck.sh
+  hooks/         # git hooks 정본 (commit-msg) — install.sh 가 각 repo 로 설치
 ```
 
 ## 진행 상태
@@ -58,9 +60,11 @@ PIKI-Infra/
 
 ### 개발 규약 공통화
 - [x] commit-msg 훅 SSOT 화 (`hooks/commit-msg`) + 자기 배선 (SessionStart cp)
-- [x] 배선 메커니즘 결정: **원격 fetch** — 소비 repo 의 SessionStart 가 `gh api` 로 정본을
-      받아 `$(git rev-parse --git-common-dir)/hooks` 에 설치. 복사본 체크인 0(진짜 SSOT),
-      worktree 안전, 실패 시 기존 설치본 유지. **배선이 서면 기존 복사본은 SSOT 를
+- [x] 배선 메커니즘 결정: **얇은 부트스트랩 + 정본 설치기(`install.sh`)** — 소비 repo 의
+      SessionStart 는 "install.sh 를 원격 fetch 해 실행" 한 줄뿐이고, 남는 상수는 repo 좌표
+      1개다(최소 포인터, 제거 불가). 자산 목록·설치 위치·실패 처리는 install.sh(SSOT)만
+      알아, 자산이 늘어도 소비 repo 는 무변경. 복사본 체크인 0, worktree 안전
+      (`git-common-dir`), 실패 시 기존 설치본 유지. **배선이 서면 기존 복사본은 SSOT 를
       어긋나게 하는 잔재이므로 삭제한다** (이관의 일부).
 - [ ] 소비 repo 배선: extractor PR [#1](https://github.com/TeamPiKi/PIKI-Extractor/pull/1) ·
       server (진행 중: fetch 전환 + 체크인 훅 삭제 + 스킬 타입 열거 제거) ·
