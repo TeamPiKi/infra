@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f hooks/commit-msg ] && cp hooks/commit-msg .git/hooks/commit-msg && chmod +x .git/hooks/commit-msg || true"
+          }
+        ]
+      }
+    ]
+  }
+}
