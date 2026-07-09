@@ -16,9 +16,11 @@
 
 - 버킷 `piki-tfstate-<ACCOUNT_ID>` (ap-northeast-2), `encrypt = true`, `use_lockfile = true`.
   잠금은 S3 native lock 을 쓰며 DynamoDB 락 테이블을 두지 않는다. 셋 다 동일.
-- **버킷명 주입**: public repo(extractor·headless)는 계정번호 노출을 막으려 gitignore 된
-  `backend.hcl` 로 주입하고 `backend.hcl.example` 만 커밋한다. private repo(server)는 코드에
-  직접 박아도 된다. 이 차이는 repo 공개성에 따른 정당한 분기다.
+- **버킷명 주입**: public repo 는 계정번호 노출을 막으려 gitignore 된 `backend.hcl` 로
+  주입하고 `backend.hcl.example` 만 커밋한다 (extractor·headless 가 이 패턴).
+- **공개 repo 값 규율**: 이 repo 를 포함한 public repo 에는 AWS 계정번호·호스트 주소·
+  private IP·토큰 등 내부 식별 값을 커밋하지 않는다. 문서엔 `<ACCOUNT_ID>` 같은
+  플레이스홀더를 쓰고, 실제 값은 각 환경의 gitignore 파일·시크릿 저장소가 갖는다.
 - **apply 는 CI 없이 수동**(팀 규율). state 가 key 로 분리되어 각 apply 는 자기 key 의
   인프라에만 영향을 준다. (단 server 는 dev/staging/prod 통합 state 라 로컬 apply 가 prod 까지 미침.)
 
