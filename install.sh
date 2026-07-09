@@ -28,10 +28,13 @@ else
 fi
 
 # $1=자산 경로(repo 내) $2=설치 대상(절대경로) $3=mode
+# bash -n: 문법 깨진 정본이 main 에 잠깐 올라가도 소비 repo 의 훅을 깨뜨리지 않게
+# 설치를 스킵하고 기존 설치본을 유지한다 (가용성 가드). 현재 자산은 전부 셸 스크립트라
+# 일괄 적용하며, 셸이 아닌 자산 유형이 생기면 검증을 자산별 인자로 분기한다.
 install_asset() {
   local tmp
   tmp=$(mktemp)
-  if get "$1" >"$tmp" && [ -s "$tmp" ]; then
+  if get "$1" >"$tmp" && [ -s "$tmp" ] && bash -n "$tmp" 2>/dev/null; then
     install -m "$3" "$tmp" "$2"
   fi
   rm -f "$tmp"
