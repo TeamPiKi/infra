@@ -22,6 +22,8 @@ SSM in-box)이며, 이는 얇은 transport 어댑터로 분리한다.
 
 ```
 PIKI-Infra/
+  conventions/   # 이미 통일된 인프라 규약 (등급 A: 기준선)
+    infra.md     # terraform state·컨테이너 배포단위·네트워크 격리
   contracts/     # 서비스 간 배포 계약 (판정 방식·규약)
     health.md    # 헬스체크 계약 (첫 통일 대상)
   blocks/        # 실행 위치 중립 공유 스크립트 (순수 bash)
@@ -31,7 +33,7 @@ PIKI-Infra/
 ## 진행 상태
 
 - [x] 헬스체크 계약 + `healthcheck.sh` (첫 공유 블록)
-- [ ] 등급 A 명문화 (terraform state 규약·이미지 배포단위·네트워크 격리 — 이미 통일된 것 문서화)
+- [x] 등급 A 명문화 (`conventions/infra.md` — terraform state·이미지 배포단위·네트워크 격리)
 - [ ] 이미지 태그·레지스트리 네이밍 통일 (`piki-<service>:{latest,<sha>}`)
 - [ ] 시크릿 네이밍 규약 (`/piki-<service>/*`)
 - [ ] run_container / provision 블록
