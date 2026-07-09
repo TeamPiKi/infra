@@ -21,9 +21,8 @@
 #   --timeout      각 요청 curl 타임아웃(초). 기본 5 (서비스 무관 공통값)
 #   --expect-body  (선택) 응답 본문에 포함돼야 할 문자열. 없으면 HTTP 200 만으로 판정
 #
-# interval·attempts 는 서비스 기동 특성(JVM+DB vs 브라우저)에 따라 다르므로 default 를 두지
-# 않는다. default 를 두면 특정 서비스 값과 우연히 겹쳐(예: server 5x60) 명시 세팅을 빠뜨려도
-# 조용히 통과해버린다. 값의 출처는 호출부(서비스별 배포 설정)가 유일하게 책임진다.
+# interval·attempts 는 서비스마다 다른 값이라 default 없는 필수 인자다 — 블록은 값을
+# 소유하지 않는다 (conventions/blocks.md 2번 원칙).
 #
 # 종료 코드: 성공 0, 모든 시도 소진 후 실패 1, 인자 오류 2
 
