@@ -12,7 +12,7 @@
 |---|---|---|
 | server (앱) | `terraform.tfstate` | dev/staging/prod 를 하나로 통합한 single state |
 | extractor | `extractor/terraform.tfstate` | 앱 state 와 분리 |
-| headless | `headless-browser/terraform.tfstate` | 앱 state 와 분리 |
+| renderer | `headless-browser/terraform.tfstate` | 앱 state 와 분리 (key 는 S3 의 사실 기록이라 옛 이름 유지) |
 
 - 버킷 `piki-tfstate-<ACCOUNT_ID>` (ap-northeast-2), `encrypt = true`, `use_lockfile = true`.
   잠금은 S3 native lock 을 쓰며 DynamoDB 락 테이블을 두지 않는다. 셋 다 동일.

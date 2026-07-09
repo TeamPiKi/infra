@@ -1,6 +1,6 @@
 # 헬스체크 계약
 
-세 서비스(PIKI-Server / PIKI-Extractor / PIKI-HeadlessBrowser)의 배포 직후
+세 서비스(core / extractor / renderer)의 배포 직후
 "새 컨테이너가 트래픽 받을 준비가 됐나"를 판정하는 공통 게이트.
 
 ## 계약
