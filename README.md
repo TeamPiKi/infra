@@ -43,8 +43,11 @@ infra/
     health.md    # 헬스체크 계약 (첫 통일 대상)
   blocks/        # 실행 위치 중립 공유 스크립트 (순수 bash)
     healthcheck.sh
+    healthcheck.test.sh
   hooks/         # git hooks 정본 (commit-msg) — install.sh 가 각 repo 로 설치
   skills/        # 개발 스킬 정본 (commit·coderabbit) — install.sh 가 소비 repo 의 .claude/commands 로 설치
+  .github/workflows/  # CI (정본) — shellcheck·블록 셀프테스트
+    ci.yml
 ```
 
 ## 진행 상태
@@ -54,10 +57,13 @@ infra/
 - [x] 등급 A 명문화 (`conventions/infra.md` — terraform state·이미지 배포단위·네트워크 격리)
 - [x] 블록 작성 원칙 (`conventions/blocks.md`)
 - [ ] 이미지 태그·레지스트리 네이밍 통일 (`piki-<service>:{latest,<sha>}`)
-- [ ] 시크릿 네이밍 규약 (`/piki-<service>/*`)
+- [x] 시크릿 네이밍 규약 (`/piki-<service>/*` — `conventions/infra.md` "4. 시크릿 네이밍".
+      적용 현황: extractor·renderer 준수, core 는 등급 C 이관 시)
 - [ ] run_container / provision 블록
 - [ ] transport 어댑터 (via-ssh / via-ssm)
 - [ ] 서비스별 조립 매니페스트
+- [x] CI (shellcheck + 블록 셀프테스트, `.github/workflows/ci.yml`)
+- [ ] CI 를 required status check 로 승격 (팀 결정)
 
 ### 개발 규약 공통화
 - [x] commit-msg 훅 SSOT 화 (`hooks/commit-msg`) + 자기 배선 (SessionStart cp)
@@ -73,5 +79,6 @@ infra/
       repo 무관하게 만든 뒤 승격. `install.sh` 가 소비 repo 의 `.claude/commands/` 로 설치하고
       (`gc` 는 `commit` 별칭), self 모드(infra 자신)에서는 버전 영역 오염을 피해 스킵한다.
       `issue`·`pr` 은 아직 진화 중이라 로컬 유지(후속 승격 후보)
-- [ ] 소비 repo 의 기존 복사본 삭제 + `.gitignore` 처리(SSOT 잔재 제거) — core 측 후속 PR
-      소관, **이 PR 이 먼저 머지된 뒤** 진행 (순서가 바뀌면 설치 소스 공백)
+- [x] 소비 repo 의 기존 복사본 삭제 + `.gitignore` 처리(SSOT 잔재 제거) — core PR #722 로 완료
+      (2026-07-12 머지: `commit.md`·`coderabbit.md` 로컬 복사본 삭제 + `.gitignore` 에 설치본
+      3경로 등록)
