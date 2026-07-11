@@ -1,5 +1,9 @@
 name: ci
 
+# 두 job 모두 읽기 전용이다 - 토큰 범위를 최소화하고 checkout 의 자격증명 잔존도 끈다.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -11,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Run shellcheck on all shell assets
         run: |
@@ -26,6 +32,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Run healthcheck.sh self-test
         run: ./blocks/healthcheck.test.sh

@@ -29,10 +29,17 @@ printf '{"status":"ok"}' >"$WORKDIR/ok.json"
 python3 -m http.server "$PORT" --directory "$WORKDIR" --bind 127.0.0.1 >/dev/null 2>&1 &
 SERVER_PID=$!
 
+# 서버 기동 실패(포트 충돌 등)를 여기서 명시적으로 끊는다 - 안 끊으면 아래 케이스들이
+# 연결 실패로 인한 "expected N, got M" 로 위장되어 원인 추적이 어려워진다.
+STARTED=0
 for _ in $(seq 1 20); do
-  curl -sS -m 1 "http://127.0.0.1:$PORT/ok.json" >/dev/null 2>&1 && break
+  curl -sS -m 1 "http://127.0.0.1:$PORT/ok.json" >/dev/null 2>&1 && { STARTED=1; break; }
   sleep 0.2
 done
+if [ "$STARTED" -ne 1 ]; then
+  echo "local http server failed to start on port $PORT" >&2
+  exit 1
+fi
 
 FAILURES=0
 
