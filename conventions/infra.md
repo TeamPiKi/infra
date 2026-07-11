@@ -45,3 +45,17 @@
   외부에 노출하지 않고 nginx 가 localhost 로 forward 한다. server SG 의 ingress 규칙은
   콘솔/CLI 가 권위를 가지며 terraform 은 `ignore_changes = [ingress]` 로 덮어쓰지 않는다.
 - **egress 는 셋 다 전체 개방**(0.0.0.0/0). 외부 몰 fetch·LLM·헤드리스 렌더·프록시로 나가야 하기 때문.
+
+## 4. 시크릿 네이밍
+
+- **SSM Parameter Store 를 쓰는 서비스는 경로를 `/piki-<service>/<key>` 로 통일한다.**
+  런타임 주입(2번 항목)의 구체 규약이다. extractor·renderer 가 이미 이 규약을 따른다.
+  - extractor: `/piki-extractor/*` (예: `/piki-extractor/gemini-api-key`)
+  - renderer: `/piki-headless-browser/*` (예: `/piki-headless-browser/grafana-metrics-url`) —
+    `<service>` 자리에 옛 이름 `headless-browser` 를 그대로 쓴다. 1번 항목의 state key 와
+    같은 이유다 (이미 생성된 실제 파라미터 경로라, 리네이밍하면 재생성·값 마이그레이션 비용이 든다).
+  - `<key>` 는 kebab-case 소문자로 쓴다 (실측 사례: `gemini-api-key`, `grafana-metrics-url`).
+- **core(server)는 아직 GitHub secrets 를 쓴다.** SSM 단일화는 등급 C(로드맵)에서 이관하며,
+  이관 시 같은 규약을 따라 `/piki-core/*` 를 쓴다.
+- **새 서비스·새 시크릿은 시작부터 이 규약을 따른다.** renderer 처럼 이미 생성된 옛 이름을
+  유지해야 하는 예외가 아니면, repo 이름과 SSM 서비스 세그먼트를 일치시킨다.
