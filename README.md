@@ -52,6 +52,7 @@ infra/
 - [x] 헬스체크 계약 + `healthcheck.sh` (첫 공유 블록)
 - [x] 등급 A 명문화 (`conventions/infra.md` — terraform state·이미지 배포단위·네트워크 격리)
 - [x] 블록 작성 원칙 (`conventions/blocks.md`)
+- [x] 관측 계약 + Alloy 공통 블록 (`contracts/observability.md` · `blocks/alloy/`)
 - [ ] 이미지 태그·레지스트리 네이밍 통일 (`piki-<service>:{latest,<sha>}`)
 - [ ] 시크릿 네이밍 규약 (`/piki-<service>/*`)
 - [ ] run_container / provision 블록
