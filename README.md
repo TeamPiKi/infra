@@ -71,6 +71,7 @@ infra/
       열거 제거 포함) · renderer 만 **보류**(로컬에 타 세션 미푸시 커밋, 정리 후 배선)
 - [x] 개발 스킬 SSOT 화 (`skills/commit.md` · `skills/coderabbit.md`) — 좌표를 origin 에서 파생해
       repo 무관하게 만든 뒤 승격. `install.sh` 가 소비 repo 의 `.claude/commands/` 로 설치하고
-      (`gc` 는 `commit` 별칭), self 모드(infra 자신)에서는 버전 영역 오염을 피해 스킵한다. 소비
-      repo 의 기존 복사본은 삭제 + `.gitignore` 처리(SSOT 잔재 제거). `issue`·`pr` 은 아직
-      진화 중이라 로컬 유지(후속 승격 후보)
+      (`gc` 는 `commit` 별칭), self 모드(infra 자신)에서는 버전 영역 오염을 피해 스킵한다.
+      `issue`·`pr` 은 아직 진화 중이라 로컬 유지(후속 승격 후보)
+- [ ] 소비 repo 의 기존 복사본 삭제 + `.gitignore` 처리(SSOT 잔재 제거) — core 측 후속 PR
+      소관, **이 PR 이 먼저 머지된 뒤** 진행 (순서가 바뀌면 설치 소스 공백)

@@ -67,12 +67,15 @@ gh api --paginate "repos/$NWO/pulls/$PR/reviews" \
 ### 2. 각 CodeRabbit thread 에 reply
 
 ```bash
+# reply 는 반드시 single quote 변수로 먼저 담는다 — accept reply 는 commit hash 를 backtick 으로
+# 감싸는데(`371b5ba`), double quote 안에 직접 넣으면 셸이 명령 치환으로 실행해버린다.
+reply='<reply 내용>'
 gh api graphql -f query='
   mutation($t: ID!, $b: String!) {
     addPullRequestReviewThreadReply(input: {pullRequestReviewThreadId: $t, body: $b}) {
       comment { url }
     }
-  }' -F t="<thread id>" -f b="<reply 내용>"
+  }' -F t="<thread id>" -f b="$reply"
 ```
 
 ### 3. 자동 resolve 안 된 thread 면 resolve
