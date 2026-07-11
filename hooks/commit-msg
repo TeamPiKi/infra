@@ -1,5 +1,7 @@
 #!/bin/bash
 msg=$(head -1 "$1")
+# git 자동 생성 merge commit(로컬 dev 머지·branch update)은 형식 검사 예외
+echo "$msg" | grep -qE '^Merge ' && exit 0
 echo "$msg" | grep -qE '^(feat|fix|refactor|perf|chore|docs|test|infra|style): .+' && exit 0
 echo "커밋 형식 오류: {feat|fix|refactor|perf|chore|docs|test|infra|style}: <제목>" >&2
 exit 1
