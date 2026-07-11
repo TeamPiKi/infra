@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run shellcheck on all shell assets
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find . -name '*.sh' -not -path './.git/*' | sort)
+          files+=("hooks/commit-msg")
+          echo "shellcheck targets:"
+          printf '  %s\n' "${files[@]}"
+          shellcheck "${files[@]}"
+
+  block-test:
+    name: block-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run healthcheck.sh self-test
+        run: ./blocks/healthcheck.test.sh
