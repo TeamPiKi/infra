@@ -57,14 +57,14 @@ infra/
 - [x] 등급 A 명문화 (`conventions/infra.md` — terraform state·이미지 배포단위·네트워크 격리)
 - [x] 블록 작성 원칙 (`conventions/blocks.md`)
 - [x] 관측 계약 + Alloy 공통 블록 (`contracts/observability.md` · `blocks/alloy/`)
-- [ ] 이미지 태그·레지스트리 네이밍 통일 (`piki-<service>:{latest,<sha>}`)
+- [x] 이미지 태그·레지스트리 네이밍 통일 (`piki-<service>:{latest,<sha>}` — core 는 PR core#723 로 `piki-core` 전환, dev 실배포 검증)
 - [x] 시크릿 네이밍 규약 (`/piki-<service>/*` — `conventions/infra.md` "4. 시크릿 네이밍".
-      적용 현황: extractor·renderer 준수, core 는 등급 C 이관 시)
+      적용 현황: 세 서비스 전부 준수 — core 는 등급 C 이관(core#725·#726)으로 `/piki-core/<env>/*` 사용)
 - [ ] run_container / provision 블록
 - [ ] transport 어댑터 (via-ssh / via-ssm)
 - [ ] 서비스별 조립 매니페스트
 - [x] CI (shellcheck + 블록 셀프테스트, `.github/workflows/ci.yml`)
-- [ ] CI 를 required status check 로 승격 (팀 결정)
+- [x] CI 를 required status check 로 승격 (`shellcheck`·`block-test`, strict — 2026-07-14 적용)
 
 ### 개발 규약 공통화
 - [x] commit-msg 훅 SSOT 화 (`hooks/commit-msg`) + 자기 배선 (SessionStart cp)
