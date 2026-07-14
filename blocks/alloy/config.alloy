@@ -1,0 +1,302 @@
+// Grafana Alloy — PIKI 박스별 단일 수집기 (공통 config).
+//
+// 정본: TeamPiKi/infra · blocks/alloy/config.alloy. 박스마다 Alloy 하나가 이 config 로 돈다
+// (수집기는 박스를 따라간다). config·기동 블록의 SSOT 는 이 repo 이고, 값(환경·자격증명)은
+// 담지 않는다 — 아래 env 로 호출부/SSM 이 주입한다.
+//
+// 하는 일: 라벨로 opt-in 한 앱 컨테이너의 prometheus 메트릭 scrape + 그 컨테이너 stdout 로그
+// + 호스트 메트릭(node_exporter) + 앱 OTLP 트레이스(otelcol)를 Grafana Cloud 로 보낸다.
+//
+// 다서비스 동거는 docker label opt-in 이다(서비스 열거 regex 폐기). 라벨 계약의 정본은
+// contracts/observability.md:
+//   piki.observe="true"  수집 대상 선언(없으면 어떤 신호도 안 걷는다)
+//   piki.service         telemetry 서비스 식별자(piki-core·piki-extractor·piki-renderer)
+//   piki.metrics.port    호스트 127.0.0.1 에서 닿는 포트(없으면 메트릭 미수집, 로그는 가능)
+//   piki.metrics.path    메트릭 경로(없으면 /metrics, Spring 은 /actuator/prometheus 명시)
+//
+// 주입 env (provision-alloy.sh 의 docker run -e):
+//   ENVIRONMENT              dev/staging/prod — 메트릭·로그·트레이스의 환경 라벨
+//   PIKI_BOX                 박스 주인 서비스(piki-core·piki-extractor …) — 호스트 메트릭 box 라벨
+//   GRAFANA_METRICS_URL/USER 메트릭 remote_write endpoint·계정
+//   GRAFANA_LOGS_URL/USER    로그 loki.write endpoint·계정
+//   GRAFANA_TRACES_URL/USER  트레이스 otlphttp endpoint·계정
+//   GRAFANA_CLOUD_TOKEN      메트릭·로그·트레이스 공유 토큰(각 write scope 포함)
+// secret 미등록 시 provision-alloy.sh 가 Alloy 기동 자체를 skip 하므로, 빈 endpoint 로
+// 부팅해 crash loop 하는 일은 없다.
+
+// ── docker 서비스 디스커버리 (메트릭·로그 공용) ──
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+  // 배포로 컨테이너가 자주 교체된다. 짧은 refresh 로 사라진 컨테이너를 타겟에서 빨리 제거해
+  // loki.source.docker 의 "No such container" 추적 에러를 줄인다.
+  refresh_interval = "15s"
+}
+
+// ── 메트릭: opt-in 앱 컨테이너 /metrics → Grafana Cloud (Prometheus) ──
+// 서비스 열거 regex 대신 docker label 로 대상을 고른다. 앱 포트는 127.0.0.1 바인딩이고
+// 이 Alloy 는 --network host 라 호스트 루프백으로 scrape 한다.
+discovery.relabel "metrics" {
+  targets = discovery.docker.containers.targets
+
+  // observe 명시 + service 필수 + 메트릭 포트가 있는 컨테이너만 남긴다. 포트 라벨이 없으면
+  // 이 keep 에서 떨어져 메트릭은 안 걷힌다(로그만 opt-in 가능). observe 미선언·service 누락도 제외.
+  rule {
+    source_labels = [
+      "__meta_docker_container_label_piki_observe",
+      "__meta_docker_container_label_piki_service",
+      "__meta_docker_container_label_piki_metrics_port",
+    ]
+    separator = ";"
+    regex     = "true;.+;.+"
+    action    = "keep"
+  }
+
+  // scrape 주소 = 호스트 루프백 + 라벨의 포트. docker SD 는 컨테이너의 노출 포트마다 타깃을
+  // 만들지만, 이 규칙이 전부 같은 주소·라벨셋으로 수렴시키므로 중복 타깃은 이후 dedup 된다.
+  rule {
+    source_labels = ["__meta_docker_container_label_piki_metrics_port"]
+    regex         = "(.+)"
+    target_label  = "__address__"
+    replacement   = "127.0.0.1:$1"
+  }
+
+  // 메트릭 경로 = 라벨값. 라벨이 없으면 regex "(.+)" 가 빈 문자열에 안 맞아 replace 가 일어나지
+  // 않고 prometheus 기본 /metrics 가 유지된다(Spring 서비스는 /actuator/prometheus 를 라벨로 명시).
+  rule {
+    source_labels = ["__meta_docker_container_label_piki_metrics_path"]
+    regex         = "(.+)"
+    target_label  = "__metrics_path__"
+  }
+
+  // service = telemetry 서비스 식별자.
+  rule {
+    source_labels = ["__meta_docker_container_label_piki_service"]
+    target_label  = "service"
+  }
+
+  // job 을 컴포넌트 경로 기본값 대신 서비스 식별자로 둔다 — {job="piki-extractor"} 식 질의를 위해.
+  rule {
+    source_labels = ["__meta_docker_container_label_piki_service"]
+    target_label  = "job"
+  }
+
+  // instance = 컨테이너명(선행 슬래시 제거). blue/green 구분은 컨테이너명이 담당한다.
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "instance"
+  }
+}
+
+prometheus.scrape "containers" {
+  targets         = discovery.relabel.metrics.output
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  // 여러 박스가 같은 Grafana Cloud 로 push 하므로 라벨로 시계열을 가른다.
+  //  - environment: dev/prod 등 환경 축(메트릭·로그·트레이스 공통 결).
+  //  - box: 박스 주인 서비스(sys.env PIKI_BOX). environment=prod 박스가 2개(core·extractor)가
+  //    되면 호스트 메트릭(node_exporter, 아래) 시계열이 같은 environment 로 충돌하기 때문에 신설.
+  //    앱 메트릭은 service/instance 로 이미 갈리지만 호스트 메트릭엔 그 축이 없어 box 가 필요하다.
+  external_labels = {
+    environment = sys.env("ENVIRONMENT"),
+    box         = sys.env("PIKI_BOX"),
+  }
+  endpoint {
+    url = sys.env("GRAFANA_METRICS_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_METRICS_USER")
+      password = sys.env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+}
+
+// ── 로그: opt-in 앱 컨테이너 stdout → Grafana Cloud (Loki) ──
+// 원본의 team3-(blue|green) 컨테이너명 regex 를 label opt-in 으로 대체한다. redis·mysql·alloy(자기)
+// 등은 piki.observe 라벨이 없어 자연 제외된다(예전 redis 의 too-old 로그가 GC 400 을 유발했던 것도 함께 막힌다).
+discovery.relabel "logs" {
+  targets = discovery.docker.containers.targets
+
+  // observe 명시 + service 필수. 메트릭과 달리 포트는 요구하지 않는다(로그만 걷는 서비스도 있으니).
+  rule {
+    source_labels = [
+      "__meta_docker_container_label_piki_observe",
+      "__meta_docker_container_label_piki_service",
+    ]
+    separator = ";"
+    regex     = "true;.+"
+    action    = "keep"
+  }
+
+  // docker 가 붙이는 선행 슬래시를 떼어 container 라벨로 (/piki-extractor-blue → piki-extractor-blue).
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  // service = telemetry 서비스 식별자(메트릭과 같은 결).
+  rule {
+    source_labels = ["__meta_docker_container_label_piki_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.logs.output
+  forward_to = [loki.process.app_logs.receiver]
+}
+
+// ── ECS JSON 파싱: trace 를 structured metadata 로 승격, 본문은 message 만 ──
+// Spring 서비스가 LOG_STRUCTURED=ecs 로 내보내는 ECS JSON 한 줄(예:
+//   {"@timestamp":...,"log":{"level":"INFO","logger":"...EntryPoint"},"message":"GET / ...",
+//    "traceId":"6a1f...","spanId":"2ca4...","ecs":{"version":"8.11"}})
+// 을 받아 다음을 한다:
+//  - traceId·spanId·logger 를 structured metadata 층으로 올린다. label 이 아니라 metadata 라
+//    traceId 의 고카디널리티가 스트림을 쪼개지 않으면서 Grafana 에서 필드로 필터·표시된다.
+//  - 라인 본문을 message 로 교체해 Loki 에서 줄에 메시지만 깔끔히 남게 한다(가독성).
+// 키는 로컬 ecs 부팅 실측(2026-06-03)으로 확정: Spring Boot ECS formatter 는 micrometer MDC 키를
+// 그대로 top-level 로 둔다 → traceId·spanId(camelCase). log.level·log.logger 는 nested 라 점 경로.
+// renderer 등 비-ECS(비-JSON) 서비스의 라인은 아래 stage.json 이 조용히 통과시키므로 안전하다.
+loki.process "app_logs" {
+  // 비-JSON 라인(비-ECS 서비스·구버전 컨테이너의 평문 로그 등)은 stage.json 이 조용히 무시하고 라인을 보존한다.
+  stage.json {
+    expressions = {
+      msg      = "message",
+      trace_id = "traceId",
+      span_id  = "spanId",
+      logger   = "log.logger",
+      level    = "log.level",
+    }
+  }
+
+  // 고카디널리티(trace_id)·중카디널리티(logger)는 인덱스 없는 structured metadata 로.
+  // 빈 문자열 = 위 stage.json 이 추출한 동명 변수를 그대로 쓴다.
+  stage.structured_metadata {
+    values = {
+      trace_id = "",
+      span_id  = "",
+      logger   = "",
+    }
+  }
+
+  // level 은 저카디널리티(INFO/WARN/ERROR 등)라 label 로 — Grafana Explore 의 레벨 필터·색상이 동작한다.
+  // 라인을 message 로 줄이면 본문에 레벨 문자열이 없어 Loki 자동 detect 가 놓치므로 명시적으로 올린다.
+  stage.labels {
+    values = {
+      level = "",
+    }
+  }
+
+  // 환경을 가르는 environment 라벨(메트릭 external_labels 와 같은 결). container 라벨이 여러 박스에서
+  // 같은 이름으로 겹쳐 로그가 뒤섞이는 걸 막는다. sys.env 는 config 로드 시 평가.
+  stage.static_labels {
+    values = {
+      environment = sys.env("ENVIRONMENT"),
+    }
+  }
+
+  // 저장 라인 본문을 message 로 교체 — 줄에 메시지만 남는다.
+  stage.output {
+    source = "msg"
+  }
+
+  forward_to = [loki.write.grafana_cloud.receiver]
+}
+
+loki.write "grafana_cloud" {
+  endpoint {
+    url = sys.env("GRAFANA_LOGS_URL")
+    basic_auth {
+      username = sys.env("GRAFANA_LOGS_USER")
+      password = sys.env("GRAFANA_CLOUD_TOKEN")
+    }
+  }
+}
+
+// ── 호스트 메트릭: node_exporter (메모리·swap·디스크·CPU) ──
+// 작은 박스 + 컨테이너 메모리 무제한이라, OOM·swap 폭증은 JVM heap 메트릭만으론 안 보인다.
+// 1순위 리스크(메모리)를 제대로 잡으려면 OS 레벨 메모리/swap/디스크를 봐야 한다.
+// 컨테이너에서 호스트를 보려면 provision-alloy.sh 가 /proc·/sys·/ 를 /host/* 로 마운트하고,
+// 아래 *_path 가 그 마운트를 가리킨다. 박스별 구분(같은 environment 의 두 박스)은 remote_write
+// external_labels 의 box 라벨이 담당한다 — 호스트 메트릭엔 service/instance 축이 없기 때문.
+prometheus.exporter.unix "host" {
+  procfs_path = "/host/proc"
+  sysfs_path  = "/host/sys"
+  rootfs_path = "/host/root"
+
+  // 작은 박스라 불필요한 collector 는 끈다.
+  disable_collectors = ["ipvs", "btrfs", "infiniband", "xfs", "zfs"]
+
+  filesystem {
+    mount_points_exclude = "^/(dev|proc|sys|run/credentials/.+|var/lib/docker/.+|host/.+)($|/)"
+    fs_types_exclude     = "^(autofs|binfmt_misc|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|sysfs|tracefs)$"
+    mount_timeout        = "5s"
+  }
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+  scrape_interval = "30s"
+}
+
+// ── 트레이스: 앱 OTLP push → Grafana Cloud (Tempo) ──
+// 앱(micrometer-tracing + opentelemetry-exporter-otlp)이 span 을 이 receiver 로 push 한다. 메트릭(Alloy→앱 scrape)·
+// 로그(컨테이너 stdout tail)와 달리 trace 는 앱이 능동적으로 push 하는 유일한 신호다. 앱 컨테이너는 bridge
+// 네트워크라 컨테이너 안 localhost 는 자기 자신을 가리켜 --network host 인 이 Alloy 에 안 닿는다. 그래서 앱은
+// --add-host=host.docker.internal:host-gateway 를 받아 host.docker.internal:4318 로 보내고, 아래 receiver 를
+// 0.0.0.0 으로 bind 해 호스트 게이트웨이로 들어온 걸 받는다(외부 노출은 SG 가 차단하므로 0.0.0.0 이 안전하다).
+otelcol.receiver.otlp "app" {
+  http { endpoint = "0.0.0.0:4318" }
+  grpc { endpoint = "0.0.0.0:4317" }
+  output {
+    traces = [otelcol.processor.transform.add_env.input]
+  }
+}
+
+// 환경을 가르는 deployment.environment resource attribute 주입.
+// 메트릭(remote_write external_labels)·로그(loki static_labels)의 environment 와 같은 결 —
+// 여러 박스가 같은 Grafana Cloud(Tempo)로 push 하므로 이 라벨이 없으면 환경 간 trace 가 한데 섞인다.
+// OTel 표준 키 deployment.environment 를 써, Tempo TraceQL 에서 resource.deployment.environment 로 필터한다
+// (앱이 붙이는 식별자 resource.service.name 과 같은 resource attribute 계층). ENVIRONMENT 는 provision-alloy.sh 가
+// alloy 컨테이너에 -e 로 주입. 미주입 시 빈 문자열 attr 가 set 되지만, 배포는 항상 환경을 주입하므로 이 경로엔 닿지 않는다.
+otelcol.processor.transform "add_env" {
+  error_mode = "ignore"
+  trace_statements {
+    context    = "resource"
+    statements = [
+      "set(attributes[\"deployment.environment\"], \"" + sys.env("ENVIRONMENT") + "\")",
+    ]
+  }
+  output {
+    traces = [otelcol.processor.batch.traces.input]
+  }
+}
+
+// 작은 박스라 span 을 모아 한 번에 보내 네트워크·CPU 를 아낀다.
+otelcol.processor.batch "traces" {
+  output {
+    traces = [otelcol.exporter.otlphttp.grafana_cloud.input]
+  }
+}
+
+// GC 로 OTLP export. GC 는 통합 OTLP gateway(HTTP/protobuf)를 제공하므로 gRPC(otelcol.exporter.otlp)가
+// 아니라 otlphttp 로 보낸다. otlphttp 는 endpoint 뒤에 /v1/traces 를 붙여 전송한다. endpoint·instance ID
+// (basic auth username)는 secret, token 은 메트릭·로그와 공유(GRAFANA_CLOUD_TOKEN, traces:write scope 포함).
+// GRAFANA_TRACES_URL 미설정(traces secret 미등록) 시 더미로 fallback 해 Alloy 부팅을 살린다(메트릭·로그는 계속
+// 수집되고 trace export 만 연결 실패 로그를 남긴다. skip 가드는 GRAFANA_METRICS_URL 기준이라 traces 만 비면 여기 닿는다).
+otelcol.exporter.otlphttp "grafana_cloud" {
+  client {
+    endpoint = coalesce(sys.env("GRAFANA_TRACES_URL"), "https://otlp-unset.invalid/otlp")
+    auth     = otelcol.auth.basic.grafana_cloud.handler
+  }
+}
+
+otelcol.auth.basic "grafana_cloud" {
+  username = sys.env("GRAFANA_TRACES_USER")
+  password = sys.env("GRAFANA_CLOUD_TOKEN")
+}
