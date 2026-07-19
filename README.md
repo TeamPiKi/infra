@@ -60,10 +60,16 @@ infra/
 - [x] 이미지 태그·레지스트리 네이밍 통일 (`piki-<service>:{latest,<sha>}` — core 는 PR core#723 로 `piki-core` 전환, dev 실배포 검증)
 - [x] 시크릿 네이밍 규약 (`/piki-<service>/*` — `conventions/infra.md` "4. 시크릿 네이밍".
       적용 현황: 세 서비스 전부 준수 — core 는 등급 C 이관(core#725·#726)으로 `/piki-core/<env>/*` 사용)
-- [x] run_container 블록 (`blocks/run_container.sh` - 기동+즉사 검증, 셀프테스트 10케이스)
-- [ ] provision 블록
-- [ ] transport 어댑터 (via-ssh / via-ssm)
-- [ ] 서비스별 조립 매니페스트
+- [x] run_container 블록 (`blocks/run_container.sh` - 기동+즉사 검증·env passthrough·memory 한도,
+      세 서비스 전부 소비: core#772·extractor#6·renderer#4)
+- [x] ~~provision 블록~~ **안 만들기로 종결** (2026-07-20) - 블록화 기준은 "여러 서비스가 같은 것을
+      쓴다"인데, 프로비저닝의 공용분(Alloy)은 이미 `blocks/alloy/` 로 블록화됐고 잔여(swap·redis·
+      mysql·nginx)는 core 박스 전용이라 소비자가 하나뿐. 소비자 1개짜리 블록은 간접층만 늘린다
+- [x] ~~transport 어댑터 (via-ssh / via-ssm)~~ **불필요로 종결** (2026-07-19) - SSH 단일 transport
+      확정(내부 박스 SG 22 개방, ext#5·rend#3)으로 어댑터 분기 자체가 사라짐
+- [x] ~~서비스별 조립 매니페스트~~ **안 만들기로 종결** (2026-07-20) - 각 서비스의 deploy.yml 이
+      이미 "어떤 블록을 어떤 값으로"를 선언하는 매니페스트이고 GitHub Actions 가 실행기다.
+      서비스 3개 규모에서 별도 YAML+해석기 층은 YAGNI
 - [x] CI (shellcheck + 블록 셀프테스트, `.github/workflows/ci.yml`)
 - [x] CI 를 required status check 로 승격 (`shellcheck`·`block-test`, strict — 2026-07-14 적용)
 
