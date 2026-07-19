@@ -46,17 +46,23 @@ REPLACE=0
 VERIFY_WAIT=2
 CMD=()
 
+# 값을 받는 옵션이 마지막 인자로 끝나면(값 누락) shift 2 가 set -e 로 exit 1 이 되어
+# 계약(인자 오류=2)이 깨진다 - 값 존재를 먼저 검사한다.
+require_value() {
+  [ "$2" -ge 2 ] || { echo "missing value for $1" >&2; exit 2; }
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
-    --name)        NAME="${2:-}"; shift 2;;
-    --image)       IMAGE="${2:-}"; shift 2;;
-    --restart)     RESTART="${2:-}"; shift 2;;
-    --publish)     PUBLISH+=("${2:-}"); shift 2;;
-    --env-file)    ENV_FILE="${2:-}"; shift 2;;
-    --network)     NETWORK="${2:-}"; shift 2;;
+    --name)        require_value "$1" "$#"; NAME="$2"; shift 2;;
+    --image)       require_value "$1" "$#"; IMAGE="$2"; shift 2;;
+    --restart)     require_value "$1" "$#"; RESTART="$2"; shift 2;;
+    --publish)     require_value "$1" "$#"; PUBLISH+=("$2"); shift 2;;
+    --env-file)    require_value "$1" "$#"; ENV_FILE="$2"; shift 2;;
+    --network)     require_value "$1" "$#"; NETWORK="$2"; shift 2;;
     --pull)        PULL=1; shift;;
     --replace)     REPLACE=1; shift;;
-    --verify-wait) VERIFY_WAIT="${2:-}"; shift 2;;
+    --verify-wait) require_value "$1" "$#"; VERIFY_WAIT="$2"; shift 2;;
     --)            shift; CMD=("$@"); break;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -65,6 +71,10 @@ done
 [ -n "$NAME" ]    || { echo "--name is required" >&2; exit 2; }
 [ -n "$IMAGE" ]   || { echo "--image is required" >&2; exit 2; }
 [ -n "$RESTART" ] || { echo "--restart is required" >&2; exit 2; }
+# 비숫자 verify-wait 는 sleep 단계에서 exit 1 로 위장되므로 인자 오류(2)로 앞당겨 끊는다.
+case "$VERIFY_WAIT" in
+  ''|*[!0-9]*) echo "--verify-wait must be a non-negative integer" >&2; exit 2;;
+esac
 if [ -n "$ENV_FILE" ] && [ ! -f "$ENV_FILE" ]; then
   echo "--env-file not found: $ENV_FILE" >&2
   exit 2

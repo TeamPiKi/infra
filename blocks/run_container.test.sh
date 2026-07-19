@@ -13,9 +13,14 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_CONTAINER="$SCRIPT_DIR/run_container.sh"
 
-# docker 없는 로컬(데몬 미기동 등)에서는 명시적으로 스킵한다 - CI 러너에는 항상 있다.
+# docker 없는 로컬(데몬 미기동 등)에서는 명시적으로 스킵한다. 단 CI 는 REQUIRE_DOCKER=1 로 불러
+# 데몬 부재가 "케이스 0개 실행된 빈 통과" 로 위장되지 않게 실패시킨다.
 if ! docker info >/dev/null 2>&1; then
-  echo "SKIP: docker daemon unavailable (CI 에서는 항상 실행됨)" >&2
+  if [ "${REQUIRE_DOCKER:-0}" = "1" ]; then
+    echo "FAIL: docker daemon unavailable (REQUIRE_DOCKER=1)" >&2
+    exit 1
+  fi
+  echo "SKIP: docker daemon unavailable (CI 에서는 REQUIRE_DOCKER=1 로 강제 실행됨)" >&2
   exit 0
 fi
 
@@ -53,6 +58,14 @@ check "restart 없음 -> exit 2" 2 "$?"
 # 2. 알 수 없는 인자
 "$RUN_CONTAINER" --name "$PREFIX-a" --image alpine:3 --restart no --bogus x >/dev/null 2>&1
 check "알 수 없는 인자 -> exit 2" 2 "$?"
+
+# 2b. 값을 받는 옵션이 값 없이 끝남
+"$RUN_CONTAINER" --image alpine:3 --restart no --name >/dev/null 2>&1
+check "옵션 값 누락 -> exit 2" 2 "$?"
+
+# 2c. verify-wait 비숫자
+"$RUN_CONTAINER" --name "$PREFIX-a" --image alpine:3 --restart no --verify-wait abc >/dev/null 2>&1
+check "verify-wait 비숫자 -> exit 2" 2 "$?"
 
 # 3. env-file 경로가 존재하지 않음
 "$RUN_CONTAINER" --name "$PREFIX-a" --image alpine:3 --restart no --env-file "$WORKDIR/absent.env" >/dev/null 2>&1
