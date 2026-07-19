@@ -39,4 +39,4 @@ jobs:
         run: ./blocks/healthcheck.test.sh
 
       - name: Run run_container.sh self-test
-        run: ./blocks/run_container.test.sh
+        run: REQUIRE_DOCKER=1 ./blocks/run_container.test.sh
