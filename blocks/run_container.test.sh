@@ -107,6 +107,12 @@ check "add-host 값 반영" 0 "$?"
 "$RUN_CONTAINER" --name "$PREFIX-meta2" --image alpine:3 --restart no --label >/dev/null 2>&1
 check "label 값 누락 -> exit 2" 2 "$?"
 
+# 10. --shm-size 가 컨테이너에 반영된다 (Chrome 류 브라우저 컨테이너용)
+"$RUN_CONTAINER" --name "$PREFIX-shm" --image alpine:3 --restart no --shm-size 128m --verify-wait 1 -- sleep 60 >/dev/null 2>&1
+check "shm-size 기동 -> exit 0" 0 "$?"
+docker inspect -f '{{.HostConfig.ShmSize}}' "$PREFIX-shm" 2>/dev/null | grep -qx '134217728'
+check "shm-size 128m 반영" 0 "$?"
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES case(s) failed" >&2
   exit 1

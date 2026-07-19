@@ -27,6 +27,7 @@
 #                  (관측 opt-in 라벨 piki.* 이 대표 소비자 - contracts/observability.md)
 #   --add-host     (선택, 반복 가능) 호스트 항목. docker --add-host 와 같은 HOST:TARGET 형식
 #                  (앱 -> 박스 로컬 Alloy OTLP push 의 host-gateway 배선이 대표 소비자)
+#   --shm-size     (선택) docker --shm-size (Chrome 류 브라우저 컨테이너의 /dev/shm 확장이 대표 소비자)
 #   --pull         (선택 플래그) 기동 전에 docker pull
 #   --replace      (선택 플래그) 같은 이름 컨테이너가 있으면 rm -f 후 기동 (없으면 이름 충돌은 실패)
 #   --verify-wait  기동 후 상태 검증 전 대기 초. 기본 2 (서비스 무관 공통값 - 즉사 크래시를 잡는 최소 대기)
@@ -47,6 +48,7 @@ ENV_FILE=""
 NETWORK=""
 LABELS=()
 ADDHOSTS=()
+SHM_SIZE=""
 PULL=0
 REPLACE=0
 VERIFY_WAIT=2
@@ -68,6 +70,7 @@ while [ $# -gt 0 ]; do
     --network)     require_value "$1" "$#"; NETWORK="$2"; shift 2;;
     --label)       require_value "$1" "$#"; LABELS+=("$2"); shift 2;;
     --add-host)    require_value "$1" "$#"; ADDHOSTS+=("$2"); shift 2;;
+    --shm-size)    require_value "$1" "$#"; SHM_SIZE="$2"; shift 2;;
     --pull)        PULL=1; shift;;
     --replace)     REPLACE=1; shift;;
     --verify-wait) require_value "$1" "$#"; VERIFY_WAIT="$2"; shift 2;;
@@ -101,6 +104,7 @@ RUN_ARGS=(-d --name "$NAME" --restart "$RESTART")
 for P in ${PUBLISH[@]+"${PUBLISH[@]}"}; do RUN_ARGS+=(-p "$P"); done
 [ -n "$ENV_FILE" ] && RUN_ARGS+=(--env-file "$ENV_FILE")
 [ -n "$NETWORK" ]  && RUN_ARGS+=(--network "$NETWORK")
+[ -n "$SHM_SIZE" ] && RUN_ARGS+=(--shm-size "$SHM_SIZE")
 for L in ${LABELS[@]+"${LABELS[@]}"}; do RUN_ARGS+=(--label "$L"); done
 for H in ${ADDHOSTS[@]+"${ADDHOSTS[@]}"}; do RUN_ARGS+=(--add-host "$H"); done
 
