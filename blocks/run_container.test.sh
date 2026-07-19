@@ -113,6 +113,21 @@ check "shm-size 기동 -> exit 0" 0 "$?"
 docker inspect -f '{{.HostConfig.ShmSize}}' "$PREFIX-shm" 2>/dev/null | grep -qx '134217728'
 check "shm-size 128m 반영" 0 "$?"
 
+# 11. --env 는 호출자 셸의 export 값을 passthrough 한다 (값이 argv 에 안 실림, 다중행 지원)
+export RC_PASS_KEY="multi
+line"
+"$RUN_CONTAINER" --name "$PREFIX-envpass" --image alpine:3 --restart no --env RC_PASS_KEY --verify-wait 1 -- sleep 60 >/dev/null 2>&1
+check "env passthrough 기동 -> exit 0" 0 "$?"
+docker inspect -f '{{join .Config.Env "\n"}}' "$PREFIX-envpass" 2>/dev/null | grep -q '^RC_PASS_KEY=multi$'
+check "env passthrough 다중행 값 반영(첫 줄)" 0 "$?"
+unset RC_PASS_KEY
+
+# 12. --memory / --memory-swap 반영
+"$RUN_CONTAINER" --name "$PREFIX-mem" --image alpine:3 --restart no --memory 64m --memory-swap 128m --verify-wait 1 -- sleep 60 >/dev/null 2>&1
+check "memory 한도 기동 -> exit 0" 0 "$?"
+docker inspect -f '{{.HostConfig.Memory}}/{{.HostConfig.MemorySwap}}' "$PREFIX-mem" 2>/dev/null | grep -qx '67108864/134217728'
+check "memory 64m/swap 128m 반영" 0 "$?"
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES case(s) failed" >&2
   exit 1
