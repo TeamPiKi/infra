@@ -94,6 +94,19 @@ check "env-file 기동 -> exit 0" 0 "$?"
 docker inspect -f '{{join .Config.Env "\n"}}' "$PREFIX-env" 2>/dev/null | grep -qx 'RC_TEST_KEY=hello'
 check "env-file 값 반영" 0 "$?"
 
+# 9. --label·--add-host 패스스루가 컨테이너에 반영된다 (관측 opt-in 라벨·host-gateway 배선용)
+"$RUN_CONTAINER" --name "$PREFIX-meta" --image alpine:3 --restart no --verify-wait 1 \
+  --label rc.test=yes --label rc.test2=also --add-host rc-test-host:127.0.0.1 -- sleep 60 >/dev/null 2>&1
+check "label·add-host 기동 -> exit 0" 0 "$?"
+docker inspect -f '{{index .Config.Labels "rc.test"}}' "$PREFIX-meta" 2>/dev/null | grep -qx 'yes'
+check "label 값 반영" 0 "$?"
+docker inspect -f '{{join .HostConfig.ExtraHosts "\n"}}' "$PREFIX-meta" 2>/dev/null | grep -qx 'rc-test-host:127.0.0.1'
+check "add-host 값 반영" 0 "$?"
+
+# 9b. --label 값 누락 -> 인자 오류
+"$RUN_CONTAINER" --name "$PREFIX-meta2" --image alpine:3 --restart no --label >/dev/null 2>&1
+check "label 값 누락 -> exit 2" 2 "$?"
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES case(s) failed" >&2
   exit 1
