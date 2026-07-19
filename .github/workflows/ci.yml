@@ -37,3 +37,6 @@ jobs:
 
       - name: Run healthcheck.sh self-test
         run: ./blocks/healthcheck.test.sh
+
+      - name: Run run_container.sh self-test
+        run: ./blocks/run_container.test.sh

@@ -60,7 +60,8 @@ infra/
 - [x] 이미지 태그·레지스트리 네이밍 통일 (`piki-<service>:{latest,<sha>}` — core 는 PR core#723 로 `piki-core` 전환, dev 실배포 검증)
 - [x] 시크릿 네이밍 규약 (`/piki-<service>/*` — `conventions/infra.md` "4. 시크릿 네이밍".
       적용 현황: 세 서비스 전부 준수 — core 는 등급 C 이관(core#725·#726)으로 `/piki-core/<env>/*` 사용)
-- [ ] run_container / provision 블록
+- [x] run_container 블록 (`blocks/run_container.sh` - 기동+즉사 검증, 셀프테스트 10케이스)
+- [ ] provision 블록
 - [ ] transport 어댑터 (via-ssh / via-ssm)
 - [ ] 서비스별 조립 매니페스트
 - [x] CI (shellcheck + 블록 셀프테스트, `.github/workflows/ci.yml`)
