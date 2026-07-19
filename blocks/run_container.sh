@@ -28,6 +28,11 @@
 #   --add-host     (선택, 반복 가능) 호스트 항목. docker --add-host 와 같은 HOST:TARGET 형식
 #                  (앱 -> 박스 로컬 Alloy OTLP push 의 host-gateway 배선이 대표 소비자)
 #   --shm-size     (선택) docker --shm-size (Chrome 류 브라우저 컨테이너의 /dev/shm 확장이 대표 소비자)
+#   --env          (선택, 반복 가능) 컨테이너에 넘길 env 키 이름. docker 의 '-e KEY' passthrough 형식으로,
+#                  값은 호출자 셸에 export 된 것을 docker 가 직접 읽는다 - 값이 argv 에 안 실려 ps 노출이 없고,
+#                  --env-file 이 못 싣는 다중행 값(PEM 등)도 바이트 그대로 전달된다
+#   --memory       (선택) docker --memory (cgroup 메모리 한도 - OOM 폭발 반경을 컨테이너로 가둔다)
+#   --memory-swap  (선택) docker --memory-swap (--memory 와 짝: 부팅 스파이크를 swap 으로 흘리는 쿠션)
 #   --pull         (선택 플래그) 기동 전에 docker pull
 #   --replace      (선택 플래그) 같은 이름 컨테이너가 있으면 rm -f 후 기동 (없으면 이름 충돌은 실패)
 #   --verify-wait  기동 후 상태 검증 전 대기 초. 기본 2 (서비스 무관 공통값 - 즉사 크래시를 잡는 최소 대기)
@@ -49,6 +54,9 @@ NETWORK=""
 LABELS=()
 ADDHOSTS=()
 SHM_SIZE=""
+ENV_KEYS=()
+MEMORY=""
+MEMORY_SWAP=""
 PULL=0
 REPLACE=0
 VERIFY_WAIT=2
@@ -71,6 +79,9 @@ while [ $# -gt 0 ]; do
     --label)       require_value "$1" "$#"; LABELS+=("$2"); shift 2;;
     --add-host)    require_value "$1" "$#"; ADDHOSTS+=("$2"); shift 2;;
     --shm-size)    require_value "$1" "$#"; SHM_SIZE="$2"; shift 2;;
+    --env)         require_value "$1" "$#"; ENV_KEYS+=("$2"); shift 2;;
+    --memory)      require_value "$1" "$#"; MEMORY="$2"; shift 2;;
+    --memory-swap) require_value "$1" "$#"; MEMORY_SWAP="$2"; shift 2;;
     --pull)        PULL=1; shift;;
     --replace)     REPLACE=1; shift;;
     --verify-wait) require_value "$1" "$#"; VERIFY_WAIT="$2"; shift 2;;
@@ -105,6 +116,9 @@ for P in ${PUBLISH[@]+"${PUBLISH[@]}"}; do RUN_ARGS+=(-p "$P"); done
 [ -n "$ENV_FILE" ] && RUN_ARGS+=(--env-file "$ENV_FILE")
 [ -n "$NETWORK" ]  && RUN_ARGS+=(--network "$NETWORK")
 [ -n "$SHM_SIZE" ] && RUN_ARGS+=(--shm-size "$SHM_SIZE")
+[ -n "$MEMORY" ]      && RUN_ARGS+=(--memory "$MEMORY")
+[ -n "$MEMORY_SWAP" ] && RUN_ARGS+=(--memory-swap "$MEMORY_SWAP")
+for K in ${ENV_KEYS[@]+"${ENV_KEYS[@]}"}; do RUN_ARGS+=(-e "$K"); done
 for L in ${LABELS[@]+"${LABELS[@]}"}; do RUN_ARGS+=(--label "$L"); done
 for H in ${ADDHOSTS[@]+"${ADDHOSTS[@]}"}; do RUN_ARGS+=(--add-host "$H"); done
 
