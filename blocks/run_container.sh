@@ -23,6 +23,10 @@
 #   --publish      (선택, 반복 가능) 포트 바인딩. docker -p 와 같은 형식
 #   --env-file     (선택) docker --env-file 로 넘길 KEY=VALUE 파일 (시크릿을 argv 에 노출하지 않기 위한 유일 통로)
 #   --network      (선택) docker --network 값
+#   --label        (선택, 반복 가능) 컨테이너 라벨. docker --label 과 같은 KEY=VALUE 형식
+#                  (관측 opt-in 라벨 piki.* 이 대표 소비자 - contracts/observability.md)
+#   --add-host     (선택, 반복 가능) 호스트 항목. docker --add-host 와 같은 HOST:TARGET 형식
+#                  (앱 -> 박스 로컬 Alloy OTLP push 의 host-gateway 배선이 대표 소비자)
 #   --pull         (선택 플래그) 기동 전에 docker pull
 #   --replace      (선택 플래그) 같은 이름 컨테이너가 있으면 rm -f 후 기동 (없으면 이름 충돌은 실패)
 #   --verify-wait  기동 후 상태 검증 전 대기 초. 기본 2 (서비스 무관 공통값 - 즉사 크래시를 잡는 최소 대기)
@@ -41,6 +45,8 @@ RESTART=""
 PUBLISH=()
 ENV_FILE=""
 NETWORK=""
+LABELS=()
+ADDHOSTS=()
 PULL=0
 REPLACE=0
 VERIFY_WAIT=2
@@ -60,6 +66,8 @@ while [ $# -gt 0 ]; do
     --publish)     require_value "$1" "$#"; PUBLISH+=("$2"); shift 2;;
     --env-file)    require_value "$1" "$#"; ENV_FILE="$2"; shift 2;;
     --network)     require_value "$1" "$#"; NETWORK="$2"; shift 2;;
+    --label)       require_value "$1" "$#"; LABELS+=("$2"); shift 2;;
+    --add-host)    require_value "$1" "$#"; ADDHOSTS+=("$2"); shift 2;;
     --pull)        PULL=1; shift;;
     --replace)     REPLACE=1; shift;;
     --verify-wait) require_value "$1" "$#"; VERIFY_WAIT="$2"; shift 2;;
@@ -93,6 +101,8 @@ RUN_ARGS=(-d --name "$NAME" --restart "$RESTART")
 for P in ${PUBLISH[@]+"${PUBLISH[@]}"}; do RUN_ARGS+=(-p "$P"); done
 [ -n "$ENV_FILE" ] && RUN_ARGS+=(--env-file "$ENV_FILE")
 [ -n "$NETWORK" ]  && RUN_ARGS+=(--network "$NETWORK")
+for L in ${LABELS[@]+"${LABELS[@]}"}; do RUN_ARGS+=(--label "$L"); done
+for H in ${ADDHOSTS[@]+"${ADDHOSTS[@]}"}; do RUN_ARGS+=(--add-host "$H"); done
 
 docker run "${RUN_ARGS[@]}" "$IMAGE" ${CMD[@]+"${CMD[@]}"} >/dev/null \
   || { echo "container start FAILED: $NAME" >&2; exit 1; }
