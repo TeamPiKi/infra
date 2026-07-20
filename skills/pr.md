@@ -14,6 +14,8 @@
 
 ```bash
 CURRENT_BRANCH=$(git branch --show-current)
+# detached HEAD 면 --show-current 가 빈 문자열이라 아래 같음/다름 가드를 조용히 통과한다 - 이름 있는 브랜치를 강제.
+[ -n "$CURRENT_BRANCH" ] || { echo "detached HEAD - 작업 브랜치를 체크아웃한 뒤 /pr 을 다시 호출."; exit 1; }
 # origin 최신화 — base 판정과 1단계 log·diff, Start date 계산은 전부 origin/$BASE 기준이라, fetch 없이는 stale 참조로 남의 커밋이 diff 에 섞인다.
 # 실패 시 중단 — stale 기준으로 그냥 진행하면 위 문제가 조용히 그대로 일어난다 (네트워크·인증 확인 후 재시도).
 git fetch origin -q || { echo "git fetch 실패 — origin 이 stale 인 채 진행하지 않는다. 네트워크 확인 후 재시도."; exit 1; }
@@ -107,7 +109,7 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
 
 이번 대화에서 나눈 내용을 중심으로, 아래 템플릿을 채운다:
 
-```
+```markdown
 ## Situation
 - 이 작업이 필요했던 배경/문제 상황
 - 대화에서 논의된 동기나 맥락

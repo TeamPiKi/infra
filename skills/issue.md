@@ -69,7 +69,7 @@ gh issue list --search "{제목 키워드}" --state open --json number,title,lab
 
 분해된 본문 + 중복 검사 결과를 한 화면에 보여주고:
 
-```
+```text
 [본문 미리보기]
 ## 왜
 {분해된 내용}
@@ -91,10 +91,12 @@ gh issue list --search "{제목 키워드}" --state open --json number,title,lab
 
 ### A-4. 이슈 생성
 
+본문은 인라인 `--body` 가 아니라 **Write 도구로 `/tmp/issue_body_{제목슬러그}.md` 에 저장해 `--body-file` 로** 넘긴다 - 자유 텍스트 속 따옴표·백틱·`$()` 가 셸 해석을 타지 않게 (제목은 모델이 구성한 한 줄 인자라 인라인 유지).
+
 ```bash
 gh issue create \
   --title "{제목}" \
-  --body "{본문}" \
+  --body-file /tmp/issue_body_{제목슬러그}.md \
   --label "epic" \
   --assignee @me
 ```
@@ -167,7 +169,7 @@ gh issue list --label epic --state open --json number,title --limit 20
 
 본문 + 자동 결정 + 중복 검사 결과를 한 화면에 보여주고:
 
-```
+```text
 [본문 미리보기]
 ## 상위 Epic
 #{추천 번호}            ← 없으면 통째 생략
@@ -195,10 +197,12 @@ gh issue list --label epic --state open --json number,title --limit 20
 
 ### B-4. 이슈 생성
 
+본문 전달은 A-4 와 같다 - Write 도구로 `/tmp/issue_body_{제목슬러그}.md` 에 저장해 `--body-file` 로 넘긴다.
+
 ```bash
 gh issue create \
   --title "{제목}" \
-  --body "{본문}" \
+  --body-file /tmp/issue_body_{제목슬러그}.md \
   --label "{선택된 분류 라벨}" \
   --assignee @me
 ```
