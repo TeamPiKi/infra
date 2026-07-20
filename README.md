@@ -45,7 +45,7 @@ infra/
     healthcheck.sh
     healthcheck.test.sh
   hooks/         # git hooks 정본 (commit-msg) — install.sh 가 각 repo 로 설치
-  skills/        # 개발 스킬 정본 (commit·coderabbit) — install.sh 가 소비 repo 의 .claude/commands 로 설치
+  skills/        # 개발 스킬 정본 (commit·coderabbit·pr·issue) — install.sh 가 소비 repo 의 .claude/commands 로 설치
   .github/workflows/  # CI (정본) — shellcheck·블록 셀프테스트
     ci.yml
 ```
@@ -82,11 +82,14 @@ infra/
       (`git-common-dir`), 실패 시 기존 설치본 유지. **배선이 서면 기존 복사본은 SSOT 를
       어긋나게 하는 잔재이므로 삭제한다** (이관의 일부).
 - [x] 소비 repo 배선: extractor(PR #1 머지) · core(PR #711 머지, 체크인 훅 삭제 + 스킬 타입
-      열거 제거 포함) · renderer 만 **보류**(로컬에 타 세션 미푸시 커밋, 정리 후 배선)
+      열거 제거 포함) · renderer(origin/main 부트스트랩 배선 반영 확인 — 보류 해소, 2026-07-20)
 - [x] 개발 스킬 SSOT 화 (`skills/commit.md` · `skills/coderabbit.md`) — 좌표를 origin 에서 파생해
       repo 무관하게 만든 뒤 승격. `install.sh` 가 소비 repo 의 `.claude/commands/` 로 설치하고
       (`gc` 는 `commit` 별칭), self 모드(infra 자신)에서는 버전 영역 오염을 피해 스킵한다.
-      `issue`·`pr` 은 아직 진화 중이라 로컬 유지(후속 승격 후보)
+      `issue`·`pr` 도 좌표를 repo 무관화해 승격 (2026-07-20) — base 브랜치를 origin/dev → repo
+      default 로 파생, core 전용 워크플로(pr-merge-project-sync) 언급을 한정. 보드·Issue Type ID 는
+      org 상수라 그대로 둔다. 스킬 전제인 분류 라벨 9종(라벨==브랜치 prefix 1:1)을
+      extractor·renderer·infra 에 동기화(기존 기본 라벨은 유지, 추가만)
 - [x] 소비 repo 의 기존 복사본 삭제 + `.gitignore` 처리(SSOT 잔재 제거) — core PR #722 로 완료
       (2026-07-12 머지: `commit.md`·`coderabbit.md` 로컬 복사본 삭제 + `.gitignore` 에 설치본
       3경로 등록)
