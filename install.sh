@@ -72,6 +72,8 @@ if [ "$self" = 0 ]; then
   install_asset skills/coderabbit.md "$cmd_dir/coderabbit.md" 644 md
   install_asset skills/pr.md         "$cmd_dir/pr.md"         644 md
   install_asset skills/issue.md      "$cmd_dir/issue.md"      644 md
+  install_asset skills/session-check.md "$cmd_dir/session-check.md" 644 md
+  install_asset skills/session-close.md "$cmd_dir/session-close.md" 644 md
 fi
 
 exit 0
