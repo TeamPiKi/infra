@@ -106,8 +106,6 @@ if [ "$self" = 0 ]; then
   install_asset skills/issue.md      "$cmd_dir/issue.md"      644 md
   install_asset skills/session-check.md "$cmd_dir/session-check.md" 644 md
   install_asset skills/session-close.md "$cmd_dir/session-close.md" 644 md
-  install_asset skills/retitle.md       "$cmd_dir/retitle.md"       644 md
-  install_asset skills/find-session.md  "$cmd_dir/find-session.md"  644 md
 fi
 
 # 세션 훅·유틸 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이다.
@@ -120,11 +118,18 @@ fi
 # 없을 때만 더하고 다른 훅은 건드리지 않으며, opt-out 파일이 있으면 등록을 통째로 건너뛴다.
 claude_dir="$HOME/.claude"
 if [ -d "$claude_dir" ]; then
-  mkdir -p "$claude_dir/hooks" "$claude_dir/scripts"
+  mkdir -p "$claude_dir/hooks" "$claude_dir/scripts" "$claude_dir/commands"
   install_asset claude/hooks/session-auto-name.sh     "$claude_dir/hooks/session-auto-name.sh"     755 sh
   install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    755 sh
   install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 755 sh
   install_asset claude/scripts/find-session.sh        "$claude_dir/scripts/find-session.sh"        755 sh
+
+  # 세션 스킬은 repo 스킬(commit·pr·issue…)과 달리 **전역**으로 설치한다. 세션 관리는 repo 를
+  # 건드리지 않는 일이라 piki repo 밖(다른 repo·빈 디렉토리)에서도 필요하고, 전역에 두면 소비 repo
+  # 3곳에 .gitignore 를 더할 이유도 없어진다. 정본이 하나이므로 repo 사본과의 drift 도 생기지 않는다.
+  install_asset skills/retitle.md      "$claude_dir/commands/retitle.md"      644 md
+  install_asset skills/find-session.md "$claude_dir/commands/find-session.md" 644 md
+
   register_session_hooks "$claude_dir/settings.json"
 fi
 
