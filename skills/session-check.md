@@ -28,6 +28,7 @@
 ```bash
 BR=$(git rev-parse --abbrev-ref HEAD)
 CUR=$(git rev-parse --show-toplevel)
+MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')   # 메인 체크아웃 (절차 6 의 sub-worktree 판별용)
 ```
 
 ### A. 현재 워크트리 Git 상태 (기본·전역 공통)
@@ -48,10 +49,15 @@ git stash list                # 남은 stash
 ```bash
 git for-each-ref --format='%(refname:short) | %(upstream:short) | %(upstream:track)' refs/heads/"$BR"   # 현재 브랜치의 ahead / no-upstream / [gone]
 gh pr list --author "@me" --state open --head "$BR" --json number,title,headRefName,reviewDecision,statusCheckRollup
+# [gone] 일 때만 — 머지 여부는 upstream 소멸이 아니라 merged PR 로 확인한다 (아래 주의 참조).
+gh pr list --head "$BR" --state merged --json number,headRefName \
+  --jq '[.[] | select(.headRefName == "'"$BR"'")] | length'
 ```
 
-- `%(upstream:track)` 가 `[gone]` → 현재 브랜치의 upstream(원격 추적 브랜치)이 삭제됨 = **머지된 신호**. 단 현재 브랜치는 정의상 현재 워크트리에 체크아웃돼 있어 `git branch -D` 로 삭제 불가다. → **액션 아님, 안내**: "이 브랜치는 머지됨 → 워크트리째 정리하려면 `/session-close`." (session-close 가 워크트리 제거 + 브랜치 삭제를 함께 처리한다.)
-- upstream 이 없음(=한 번도 push 안 됨)이거나 ahead → **정리 안내**: `git push`(필요 시 `-u`) 하면 됨(여기선 실행 안 함). `[gone]` 과 혼동하지 않는다 — `[gone]` 은 push 가 아니라 머지 신호다.
+- `%(upstream:track)` 가 `[gone]` → 원격 추적 브랜치가 사라졌다는 뜻일 뿐 **머지 증거가 아니다** — 머지 없이 버려서 원격에서 지운 브랜치도 `[gone]` 이다. 그래서 위 merged PR 조회로 교차 확인한다(session-close 가 쓰는 것과 같은 판정).
+  - `[gone]` + merged PR 있음 → **머지 확정**. 현재 브랜치는 현재 워크트리에 체크아웃돼 있어 `git branch -D` 로 못 지우므로 → **안내**: "머지됨 → 워크트리째 정리하려면 `/session-close`."
+  - `[gone]` + merged PR 없음 → **주의로 올린다**: "원격에서 사라졌지만 머지 근거 없음 — 삭제하면 로컬 커밋이 유실될 수 있다. PR 상태를 직접 확인하라." 이 경우 `/session-close` 도 `git branch -D` 도 권하지 않는다.
+- upstream 이 없음(=한 번도 push 안 됨)이거나 ahead → **정리 안내**: `git push`(필요 시 `-u`) 하면 됨(여기선 실행 안 함). `[gone]` 과 혼동하지 않는다 — `[gone]` 은 push 가 아니라 "원격 ref 소멸" 신호다.
 - 현재 브랜치 PR의 CI 실패(`statusCheckRollup` 에 FAILURE)·리뷰 대기(`reviewDecision` 가 REVIEW_REQUIRED / CHANGES_REQUESTED) → **정보성** 리포트.
 
 ### C. 전체 워크트리·브랜치 스윕 (`all` 모드 한정)
@@ -73,8 +79,12 @@ git -C "<worktree_path>" status --porcelain
 
 - 현재 세션 워크트리가 아닌 다른 워크트리에 dirty/untracked → **정보성** 리포트(거기서 정리하라고 안내). 커밋은 여기서 하지 않는다.
 - prunable 워크트리 → **정리 안내**: `git worktree prune` 하면 됨(여기선 실행 안 함).
-- 현재 브랜치가 아닌 다른 브랜치가 `[gone]`(머지됐는데 안 지움) → **정리 안내**: `git branch -D <branch>` 로 삭제 가능(여기선 실행 안 함).
-  - **삭제는 `git branch -D` 를 권한다.** squash/rebase 머지된 브랜치는 커밋이 현재 HEAD 의 ancestor 가 아니라 `git branch -d`(안전 삭제)가 "not fully merged" 로 거부한다. `[gone]` 은 원격에서 이미 사라진 머지 완료 브랜치라 force 삭제(`-D`)가 안전하다. 확신이 필요하면 `gh pr list --state merged --json headRefName` 로 머지 여부를 교차 확인하라고 함께 안내한다.
+- 현재 브랜치가 아닌 다른 브랜치가 `[gone]` → **머지 확인 후에만 정리 안내**. `[gone]` 자체는 머지 증거가 아니므로(버려서 지운 브랜치도 `[gone]`) merged PR 로 먼저 교차 확인한다:
+  ```bash
+  gh pr list --state merged --json headRefName --jq '.[].headRefName'   # 머지된 브랜치명 집합
+  ```
+  - 머지 확인됨 → **정리 안내**: `git branch -D <branch>`(여기선 실행 안 함). **`-d` 가 아니라 `-D` 인 이유**: squash/rebase 머지는 커밋이 HEAD 의 ancestor 가 아니라 안전 삭제(`-d`)가 "not fully merged" 로 거부한다.
+  - 머지 확인 안 됨 → **주의만 표시하고 삭제를 권하지 않는다**(미머지 로컬 커밋 유실 위험).
   - 단, 그 브랜치가 어느 워크트리에 체크아웃돼 있으면(위 `git worktree list` 의 branch 칼럼으로 판별) `git branch -D` 가 거부된다 → "그 워크트리부터 `/session-close` 로 정리"라고 안내한다.
 - 다른 브랜치의 upstream 없음/ahead → **정리 안내**: `git push`(필요 시 `-u`), 다른 워크트리에 물린 브랜치는 `git -C <path> push`.
 - 다른 열린 본인 PR의 CI 실패·리뷰 대기 → **정보성** 리포트.
@@ -85,7 +95,11 @@ git -C "<worktree_path>" status --porcelain
 # base 는 레포마다 다르므로 파생한다 (pr·issue 스킬과 동일 규칙): origin/dev → 레포 default → main.
 # .claude/** (커맨드 문서 등 툴링)는 제외 — 스킬 자기 문서의 "TODO" 단어가 오탐되므로.
 if git rev-parse --verify origin/dev >/dev/null 2>&1; then BASE=dev; else BASE=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null || echo main); fi
-git diff "origin/$BASE...HEAD" -- ':(exclude).claude/**' | grep -nE '^\+[^+].*(TODO|FIXME)'
+if git rev-parse --verify "origin/$BASE" >/dev/null 2>&1; then
+  git diff "origin/$BASE...HEAD" -- ':(exclude).claude/**' | grep -nE '^\+[^+].*(TODO|FIXME)'
+else
+  echo "base ref origin/$BASE 없음 — TODO 스윕 건너뜀 (git fetch 후 재시도)"
+fi
 ```
 
 - 이번 브랜치에서 새로 추가된 TODO/FIXME → 리포트만.
@@ -129,7 +143,7 @@ git diff "origin/$BASE...HEAD" -- ':(exclude).claude/**' | grep -nE '^\+[^+].*(T
 3. 최종 리포트 형식으로 현재 상태를 먼저 보여준다.
 4. 정리가 필요한 항목은 리포트에 "무엇을 어떤 도구로 정리할지" 함께 적는다. **이 정리 안내 항목들은 실행하거나 `AskUserQuestion` 을 띄우지 않는다** (close 확인 ask 는 아래 절차 6 에서 별도로 처리한다).
 5. 한 줄 결론(닫아도 안전 / 남은 주의 N건)으로 마무리한다.
-6. **close 는 `AskUserQuestion` 으로 묻고, '예'일 때만 호출한다.** 결론이 "닫아도 안전"이고, 현재 워크트리(`CUR`)가 메인 체크아웃이 아니면서 머지+clean 인 **제거 대상 sub-worktree** 일 때:
+6. **close 는 `AskUserQuestion` 으로 묻고, '예'일 때만 호출한다.** 결론이 "닫아도 안전"이고, 현재 워크트리가 **제거 대상 sub-worktree**(위에서 구한 `CUR` != `MAIN` — 즉 메인 체크아웃이 아닌 linked worktree)이면서 머지+clean 일 때:
    - 최종 리포트를 보여준 **뒤**, `AskUserQuestion` 으로 "이 워크트리를 정리하고 마무리하려면 `/session-close` 를 호출할까요?"를 묻는다. 옵션은 **호출(첫 번째·추천) / 호출 안 함** 둘로 둔다.
    - 사용자가 **호출**을 고르면 그때 `/session-close` 를 `Skill` 도구로 호출한다. **호출 안 함**을 고르면 아무것도 실행하지 않고, 나중에 직접 `/session-close` 를 입력하면 된다고 한 줄 안내하고 끝낸다.
    - **사용자가 명시적으로 '호출'을 고르기 전에는 `/session-close` 를 절대 먼저 실행하지 않는다.** ask 없이 자동 호출하지 않는다.

@@ -40,35 +40,51 @@ git status --porcelain          # 비어야 함 (clean)
 #  - [gone](upstream:track)은 '원격 ref 미존재'일 뿐 머지 보장이 아니다 (버려서 삭제된 브랜치도 [gone]) → 머지 근거로 쓰지 않는다.
 #  - --search "head:..." 는 fuzzy 라 fork 동명 브랜치까지 매치된다 → --head 정확 일치 + headRefName 재필터.
 #  - merge-base --is-ancestor 도 안 쓴다: squash·rebase 머지면 머지돼도 ancestor 가 아니라 미머지로 오판한다.
-gh pr list --head "$BR" --state merged --json number,headRefName \
-  --jq '[.[] | select(.headRefName == "'"$BR"'")] | length'   # >0 이면 이 브랜치 head 의 merged PR 존재
+#  - 브랜치명 일치만으로는 부족하다: 머지 후 같은 브랜치에 새 커밋을 쌓으면 merged PR 은 그대로 있어
+#    "머지됨"으로 통과하고, 그 미머지 커밋이 워크트리와 함께 삭제된다 → PR 의 headRefOid 가 현재 HEAD 와
+#    같은지까지 확인해야 안전하다.
+HEAD_SHA=$(git rev-parse HEAD)
+gh pr list --head "$BR" --state merged --json number,headRefName,headRefOid \
+  --jq '[.[] | select(.headRefName == "'"$BR"'" and .headRefOid == "'"$HEAD_SHA"'")] | length'   # >0 이면 현재 HEAD 가 그대로 머지된 것
 ```
 
 - **dirty** (status 비어있지 않음) → **거부.** "uncommitted N건 — 먼저 `/commit` 하거나 `/session-check`." 중단.
-- **미머지** (위 merged PR 카운트가 0) → **거부.** "브랜치 `$BR` 미머지 — PR 머지 후 다시." 중단. (열린 PR 만 있는 경우도 여기 해당 — 머지 전이므로 삭제 금지.)
+- **미머지** (위 카운트가 0) → **거부.** 중단. 두 경우를 구분해 알린다:
+  - 이 브랜치의 merged PR 자체가 없음 → "브랜치 `$BR` 미머지 — PR 머지 후 다시." (열린 PR 만 있는 경우도 여기 — 머지 전이므로 삭제 금지.)
+  - merged PR 은 있으나 `headRefOid` != 현재 HEAD → "머지 이후 새 커밋이 쌓였다 — 그 커밋은 아직 머지되지 않았으므로 제거하지 않는다." **이 경우 `discard_changes` 로 우회하지 않는다.**
 - 둘 다 통과(clean + 머지됨) → **제거한다**:
   1. **머지로 닫혔어야 할 연결 이슈가 아직 열려 있는지 점검한다.** ExitWorktree 가 cwd·브랜치를 날리기 전, 아직 워크트리 안이라 `$BR` 이 유효한 이 시점에 한다. 머지된 PR 이 공식적으로 닫기로 한 이슈(`closingIssuesReferences`)와 브랜치명에서 추출한 이슈 번호(`/pr` 과 동일 규칙 `^[a-z]+/(\d+)-`)를 합쳐, 그중 아직 OPEN 인 것을 찾는다. 별도 bash 호출이라 `$BR`·PR 번호를 다시 구한다:
+     `gh` 조회가 실패(네트워크·인증·rate limit)하면 결과가 비어 "열린 이슈 없음"과 구분되지 않는다 — 그 상태로 진행하면 검증하지 못한 채 워크트리를 지우게 되므로, **조회 실패는 성공이 아니라 중단 신호로 다룬다**:
      ```bash
+     set -o pipefail
      BR=$(git rev-parse --abbrev-ref HEAD)
-     PR=$(gh pr list --head "$BR" --state merged --json number,headRefName \
-       --jq '[.[] | select(.headRefName == "'"$BR"'")][0].number // empty')   # 머지 확인 통과했으므로 비지 않음
-     { gh pr view "$PR" --json closingIssuesReferences --jq '.closingIssuesReferences[].number';
-       echo "$BR" | sed -nE 's#^[a-z]+/([0-9]+)-.*#\1#p'; } | sort -un | while read -r N; do
-         gh issue view "$N" --json number,state --jq 'select(.state=="OPEN") | .number'
+     HEAD_SHA=$(git rev-parse HEAD)
+     PR=$(gh pr list --head "$BR" --state merged --json number,headRefName,headRefOid \
+       --jq '[.[] | select(.headRefName == "'"$BR"'" and .headRefOid == "'"$HEAD_SHA"'")][0].number // empty') \
+       || { echo "PR 조회 실패 — 중단"; exit 1; }
+     REFS=$(gh pr view "$PR" --json closingIssuesReferences --jq '.closingIssuesReferences[].number') \
+       || { echo "PR 조회 실패 — 중단"; exit 1; }
+     { echo "$REFS"; echo "$BR" | sed -nE 's#^[a-z]+/([0-9]+)-.*#\1#p'; } | sort -un | while read -r N; do
+         [ -n "$N" ] || continue
+         gh issue view "$N" --json number,state --jq 'select(.state=="OPEN") | .number' \
+           || { echo "이슈 $N 조회 실패 — 중단"; exit 1; }
      done   # 출력된 번호 = 머지됐는데 안 닫힌 이슈
      ```
+     - **어느 한 명령이라도 실패하면** (위 exit 1) 이슈 점검을 끝내지 못한 것이므로 **`ExitWorktree` 로 넘어가지 않고 중단**한다. "연결 이슈를 확인하지 못했다 — 네트워크·인증 확인 후 다시" 라고 알린다.
      - **출력이 비어 있으면** (OPEN 이슈 없음) 바로 2번으로. 정상이다 — 자동닫힘이 동작했거나 연결 이슈가 없다.
      - **OPEN 이슈가 있으면** `AskUserQuestion` 으로 어떤 걸 닫을지 받는다(`multiSelect`, 기본 추천은 전부 닫기). 일부러 열어둔 이슈를 자동으로 닫지 않기 위함이다. 고른 것만 닫는다:
        ```bash
-       gh issue close "$N" --reason completed --comment "PR #$PR 머지로 닫음 (자동닫힘 누락 보정)"
+       gh issue close "$N" --reason completed --comment "PR #$PR 머지로 닫음 (자동닫힘 누락 보정)" \
+         || echo "이슈 $N 닫기 실패 — 수동으로 닫아야 한다"
        ```
+       닫기가 실패하면 **성공으로 보고하지 않는다.** 워크트리 제거는 계속 진행해도 되지만(이슈 닫기는 부수 작업), 최종 보고에 "이슈 N 은 닫지 못했다"를 반드시 남긴다.
   2. 이 브랜치가 `/tmp` 에 남긴 임시파일을 정리한다 (작업이 끝났으므로). **현재 브랜치 슬러그 것만** 지워 동시에 도는 다른 세션 파일은 건드리지 않는다. 별도 bash 호출이라 슬러그를 다시 구한다 (`$BR` 은 유지되지 않음):
      ```bash
      SLUG=$(git branch --show-current | tr '/' '_')
      rm -f /tmp/pr_body_"$SLUG".md /tmp/nb_*_"$SLUG".json 2>/dev/null
      ```
   3. `ExitWorktree({action: "remove"})` 를 호출한다.
-  4. 거부하면서 변경 목록을 돌려주면 — clean 은 이미 확인했으니 그 목록은 **squash-merge 커밋(원래 브랜치 dev 의 ancestor 가 아닌 것)** 인 false alarm 이다. 이때만 `ExitWorktree({action: "remove", discard_changes: true})` 로 재호출한다. (clean·머지를 확인하기 **전에는 절대** `discard_changes: true` 를 주지 않는다.)
+  4. 거부하면서 변경 목록을 돌려주면 — clean 은 이미 확인했으니 그 목록은 **squash·rebase 머지 커밋(base 브랜치의 ancestor 가 아닌 것)** 인 false alarm 이다. 이때만 `ExitWorktree({action: "remove", discard_changes: true})` 로 재호출한다. (clean 과 머지(`headRefOid` == 현재 HEAD)를 확인하기 **전에는 절대** `discard_changes: true` 를 주지 않는다 — 특히 "머지 이후 새 커밋" 케이스에서는 그 커밋이 진짜 유실된다.)
   5. ExitWorktree 가 **no-op** 이라고 하면(이번 세션의 `EnterWorktree` 로 들어간 워크트리가 아님 — 이전 세션·수동 생성 등), **fallback** 으로 메인에서 ref 연산한다. 이건 이 스킬의 **마지막 bash 호출**이어야 한다(`$CUR` 삭제 시 cwd 가 사라짐 — 세 명령 모두 `-C "$MAIN"` 이라 cwd 비의존):
      ```bash
      git -C "$MAIN" worktree remove "$CUR" && git -C "$MAIN" branch -D "$BR" && git -C "$MAIN" worktree prune
