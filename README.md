@@ -93,8 +93,10 @@ infra/
 - [x] `session-check`·`session-close` 승격 (2026-07-27) — core 로컬 스킬로만 있어 다른 소비 repo 에
       배포되지 않던 것을 SSOT 로 올렸다. 두 스킬은 이미 owner/repo 를 origin 에서 파생해 repo 무관
       했고, 유일한 repo 의존이던 session-check 의 TODO 스윕 base(`origin/dev` 하드코딩)를 `pr`·`issue`
-      와 같은 우선순위(origin/dev → 레포 default → main)로 파생하게 바꿨다. core 의 체크인본은
-      설치본과 중복이므로 삭제 + `.gitignore` 등록이 남았다(기존 승격들과 같은 잔재 제거 절차).
+      와 같은 우선순위(origin/dev → 레포 default → main)로 파생하게 바꿨다. 승격 중 CodeRabbit 리뷰로
+      머지 판정도 강화했다 — `[gone]` 을 머지 증거로 쓰지 않고 merged PR 로 교차 확인, `headRefOid` 로
+      "머지 후 새 커밋" 유실 차단, `gh` 조회 실패 시 워크트리 제거 전 중단. core 체크인본 삭제 +
+      `.gitignore` 등록 완료(core#809), extractor·renderer 설치 확인.
 - [x] 소비 repo 의 기존 복사본 삭제 + `.gitignore` 처리(SSOT 잔재 제거) — core PR #722 로 완료
       (2026-07-12 머지: `commit.md`·`coderabbit.md` 로컬 복사본 삭제 + `.gitignore` 에 설치본
       3경로 등록)
