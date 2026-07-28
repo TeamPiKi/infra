@@ -45,7 +45,11 @@ infra/
     healthcheck.sh
     healthcheck.test.sh
   hooks/         # git hooks 정본 (commit-msg) — install.sh 가 각 repo 로 설치
-  skills/        # 개발 스킬 정본 (commit·coderabbit·pr·issue·session-check·session-close) — install.sh 가 소비 repo 의 .claude/commands 로 설치
+  skills/        # 스킬 정본 — install.sh 가 설치한다. repo 워크플로(commit·coderabbit·pr·issue·session-check·session-close)는
+                 # 소비 repo 의 .claude/commands 로, 세션 관리(retitle·find-session)는 repo 무관이라 ~/.claude/commands 로 간다
+  claude/        # Claude Code 세션 자산 정본 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이라 그 구조를 미러링한다
+    hooks/       # 세션 훅 (session-auto-name·session-title-emit·session-title-compute)
+    scripts/     # 세션 유틸 (find-session)
   .github/workflows/  # CI (정본) — shellcheck·블록 셀프테스트
     ci.yml
 ```
@@ -100,3 +104,10 @@ infra/
 - [x] 소비 repo 의 기존 복사본 삭제 + `.gitignore` 처리(SSOT 잔재 제거) — core PR #722 로 완료
       (2026-07-12 머지: `commit.md`·`coderabbit.md` 로컬 복사본 삭제 + `.gitignore` 에 설치본
       3경로 등록)
+- [x] 세션 식별 자산 승격 (2026-07-27) — 세션을 나중에 되찾는 문제를 닫는다. `/resume` 은 현재
+      폴더의 세션만 보여줘서 worktree 작업이 메인 체크아웃에서 안 보이고, 제목이 없으면 목록에서
+      무엇이었는지 못 가린다. 스킬 `retitle`·`find-session`(repo 무관이라 전역 설치) 과 세션 훅 3종(브랜치 기반 초기 이름 +
+      대화 맥락 기반 주기 갱신) + 검색 유틸을 SSOT 로 올렸다. **설치기가 사용자 홈(`~/.claude`)까지
+      다루는 첫 자산**이라 그 영역만 규칙을 더 세게 뒀다: 등록은 없을 때만(멱등), 다른 훅은
+      무간섭, `~/.claude/.no-session-hooks` 로 opt-out, jq 부재·JSON 손상·설정 파일 부재면 무동작.
+      제목 갱신은 방출(캐시)과 계산(백그라운드 haiku)을 분리해 프롬프트 지연이 0 이다.

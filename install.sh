@@ -54,6 +54,38 @@ validate_asset() {
   esac
 }
 
+# 세션 훅을 사용자 settings.json 에 등록한다. 이 설치기가 **사용자 개인 설정을 고치는 유일한 지점**이라
+# 가장 보수적으로 다룬다.
+#   - 멱등: 같은 command 가 이미 있으면 아무것도 하지 않는다 (중복 등록 방지).
+#   - 비파괴: 기존 항목을 지우거나 고치지 않는다. Orca 등 다른 훅과 그대로 공존한다.
+#   - opt-out: ~/.claude/.no-session-hooks 가 있으면 등록을 건너뛴다. 훅을 원치 않는 사람이
+#     매번 지우지 않아도 되게 하는 탈출구다 (파일만 지우면 설치기가 되살리지 않는다).
+#   - 실패 안전: jq 가 없거나, 설정 파일이 없거나, JSON 이 깨져 있으면 손대지 않는다. 결과가
+#     유효한 JSON 일 때만 원자적으로 교체하고, 원본 권한을 보존한다.
+register_session_hooks() {
+  local settings="$1" tmp mode
+  [ -f "$HOME/.claude/.no-session-hooks" ] && return 0
+  [ -f "$settings" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  jq -e . "$settings" >/dev/null 2>&1 || return 0
+
+  tmp=$(mktemp)
+  if jq --arg start "$HOME/.claude/hooks/session-auto-name.sh" \
+        --arg emit "$HOME/.claude/hooks/session-title-emit.sh" '
+        def ensure($event; $cmd):
+          if [.hooks[$event][]?.hooks[]?.command] | index($cmd) then .
+          else .hooks[$event] = ((.hooks[$event] // []) + [{hooks: [{type: "command", command: $cmd, timeout: 10}]}])
+          end;
+        .hooks = (.hooks // {})
+        | ensure("SessionStart"; $start)
+        | ensure("UserPromptSubmit"; $emit)
+     ' "$settings" >"$tmp" 2>/dev/null && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
+    mode=$(stat -f '%Lp' "$settings" 2>/dev/null || stat -c '%a' "$settings" 2>/dev/null || echo 644)
+    install -m "$mode" "$tmp" "$settings"
+  fi
+  rm -f "$tmp"
+}
+
 # ---- 자산 목록 (여기만 고치면 모든 소비 repo 에 반영된다) ----
 
 # git hooks — 비버전 영역(.git/hooks)에 설치되므로 self 모드(infra 자신)에서도 무해하다.
@@ -74,6 +106,31 @@ if [ "$self" = 0 ]; then
   install_asset skills/issue.md      "$cmd_dir/issue.md"      644 md
   install_asset skills/session-check.md "$cmd_dir/session-check.md" 644 md
   install_asset skills/session-close.md "$cmd_dir/session-close.md" 644 md
+fi
+
+# 세션 훅·유틸 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이다.
+#
+# 왜 홈인가: Claude Code 의 세션 훅은 사용자 전역 설정이라 repo 안에 둘 자리가 없다. 그럼에도 SSOT
+# 대상인 이유는 성격이 같기 때문이다 — 여러 repo 를 오가며 쓰이고, 복제해 두면 어긋난다.
+# repo 를 열 때마다(SessionStart 부트스트랩) 최신 정본으로 맞춰진다.
+#
+# 홈은 사용자 영역이라 repo 보다 조심해서 다룬다: 파일은 정본으로 덮되, 등록(settings.json)은
+# 없을 때만 더하고 다른 훅은 건드리지 않으며, opt-out 파일이 있으면 등록을 통째로 건너뛴다.
+claude_dir="$HOME/.claude"
+if [ -d "$claude_dir" ]; then
+  mkdir -p "$claude_dir/hooks" "$claude_dir/scripts" "$claude_dir/commands"
+  install_asset claude/hooks/session-auto-name.sh     "$claude_dir/hooks/session-auto-name.sh"     755 sh
+  install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    755 sh
+  install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 755 sh
+  install_asset claude/scripts/find-session.sh        "$claude_dir/scripts/find-session.sh"        755 sh
+
+  # 세션 스킬은 repo 스킬(commit·pr·issue…)과 달리 **전역**으로 설치한다. 세션 관리는 repo 를
+  # 건드리지 않는 일이라 piki repo 밖(다른 repo·빈 디렉토리)에서도 필요하고, 전역에 두면 소비 repo
+  # 3곳에 .gitignore 를 더할 이유도 없어진다. 정본이 하나이므로 repo 사본과의 drift 도 생기지 않는다.
+  install_asset skills/retitle.md      "$claude_dir/commands/retitle.md"      644 md
+  install_asset skills/find-session.md "$claude_dir/commands/find-session.md" 644 md
+
+  register_session_hooks "$claude_dir/settings.json"
 fi
 
 exit 0
