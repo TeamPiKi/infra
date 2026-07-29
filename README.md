@@ -50,7 +50,7 @@ infra/
   skills/        # 스킬 정본 — install.sh 가 설치한다. repo 워크플로(commit·coderabbit·pr·issue·session-check·session-close)는
                  # 소비 repo 의 .claude/commands 로, 세션 관리(retitle·find-session)는 repo 무관이라 ~/.claude/commands 로 간다
   claude/        # Claude Code 세션 자산 정본 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이라 그 구조를 미러링한다
-    hooks/       # 세션 훅 (session-auto-name·session-title-emit·session-title-compute)
+    hooks/       # 세션 훅 (session-title-emit·session-title-compute) — 제목을 대화 맥락으로 갱신
     scripts/     # 세션 유틸 (find-session)
   .github/workflows/  # CI (정본) — shellcheck·블록 셀프테스트
     ci.yml
@@ -108,8 +108,7 @@ infra/
       3경로 등록)
 - [x] 세션 식별 자산 승격 (2026-07-27) — 세션을 나중에 되찾는 문제를 닫는다. `/resume` 은 현재
       폴더의 세션만 보여줘서 worktree 작업이 메인 체크아웃에서 안 보이고, 제목이 없으면 목록에서
-      무엇이었는지 못 가린다. 스킬 `retitle`·`find-session`(repo 무관이라 전역 설치) 과 세션 훅 3종(브랜치 기반 초기 이름 +
-      대화 맥락 기반 주기 갱신) + 검색 유틸을 SSOT 로 올렸다. **설치기가 사용자 홈(`~/.claude`)까지
+      무엇이었는지 못 가린다. 스킬 `retitle`·`find-session`(repo 무관이라 전역 설치) 과 세션 훅(대화 맥락 기반 주기 갱신) + 검색 유틸을 SSOT 로 올렸다. **설치기가 사용자 홈(`~/.claude`)까지
       다루는 첫 자산**이라 그 영역만 규칙을 더 세게 뒀다: 등록은 없을 때만(멱등), 다른 훅은
       무간섭, `~/.claude/.no-session-hooks` 로 opt-out, jq 부재·JSON 손상·설정 파일 부재면 무동작.
       제목 갱신은 방출(캐시)과 계산(백그라운드 haiku)을 분리해 프롬프트 지연이 0 이다.
@@ -120,3 +119,10 @@ infra/
       JVM·Spring 공통(컨텍스트 캐싱·E2E 격리·동시성). 언어 문법에 묶이는 것(메서드명 표기·단언
       라이브러리·DB 컨테이너·좌표·메타 테스트 구현)은 각 repo 가 소유한다. 스킬과 달리 규약은
       에이전트 컨텍스트에 상주해야 효력이 있어 `.claude/rules/` 로 설치하고 CLAUDE.md 가 import 한다.
+- [x] 세션 제목을 맥락 단일 근거로 정리 (2026-07-29) — 시작 시 브랜치명을 붙이던 훅을 제거했다.
+      실측상 브랜치 제목은 거의 다 3프롬프트 안에 맥락 제목으로 덮여 실익이 없었고(살아남은 건
+      짧게 끝난 세션 하나뿐), 맥락 제목이 훨씬 구체적이다(`fix/802-parsing-heartbeat-stale` →
+      "일시오류 반납 및 박동 캡 제거"). 반면 워크트리를 재사용하면 위치에서 온 이름이 실제 작업과
+      어긋나 거짓 제목이 굳는 위험만 남는다. 함께 사용자 이름 존중 결함도 고쳤다 — 첫 프롬프트에
+      이미 제목이 있으면(`claude -n` 등) 그 세션은 자동 갱신에서 제외한다. 기존 변경 감지만으로는
+      우리가 한 번도 방출하기 전이라 비교가 건너뛰어져 사용자 이름을 덮어썼다.
