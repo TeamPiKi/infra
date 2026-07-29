@@ -106,6 +106,13 @@ if [ "$self" = 0 ]; then
   install_asset skills/issue.md      "$cmd_dir/issue.md"      644 md
   install_asset skills/session-check.md "$cmd_dir/session-check.md" 644 md
   install_asset skills/session-close.md "$cmd_dir/session-close.md" 644 md
+
+  # 규약 문서 — 소비 repo 의 .claude/rules 에 설치하고, 각 repo 의 CLAUDE.md 가 import 해 자동 로드한다.
+  # 스킬(행동 절차)과 달리 이건 판단 기준이라 에이전트 컨텍스트에 상주해야 효력이 있다.
+  # 언어·스택 바인딩은 각 repo 가 자기 문서에 소유하고, 여기서는 공통 원칙만 내려보낸다.
+  rules_dir="$(git rev-parse --show-toplevel)/.claude/rules"
+  mkdir -p "$rules_dir"
+  install_asset conventions/testing.md "$rules_dir/testing-principles.md" 644 md
 fi
 
 # 세션 훅·유틸 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이다.
