@@ -54,7 +54,7 @@ validate_asset() {
   esac
 }
 
-# 세션 훅을 사용자 settings.json 에 등록한다. 이 설치기가 **사용자 개인 설정을 고치는 유일한 지점**이라
+# 세션 훅(UserPromptSubmit)을 사용자 settings.json 에 등록한다. 이 설치기가 **사용자 개인 설정을 고치는 유일한 지점**이라
 # 가장 보수적으로 다룬다.
 #   - 멱등: 같은 command 가 이미 있으면 아무것도 하지 않는다 (중복 등록 방지).
 #   - 비파괴: 기존 항목을 지우거나 고치지 않는다. Orca 등 다른 훅과 그대로 공존한다.
@@ -70,14 +70,12 @@ register_session_hooks() {
   jq -e . "$settings" >/dev/null 2>&1 || return 0
 
   tmp=$(mktemp)
-  if jq --arg start "$HOME/.claude/hooks/session-auto-name.sh" \
-        --arg emit "$HOME/.claude/hooks/session-title-emit.sh" '
+  if jq --arg emit "$HOME/.claude/hooks/session-title-emit.sh" '
         def ensure($event; $cmd):
           if [.hooks[$event][]?.hooks[]?.command] | index($cmd) then .
           else .hooks[$event] = ((.hooks[$event] // []) + [{hooks: [{type: "command", command: $cmd, timeout: 10}]}])
           end;
         .hooks = (.hooks // {})
-        | ensure("SessionStart"; $start)
         | ensure("UserPromptSubmit"; $emit)
      ' "$settings" >"$tmp" 2>/dev/null && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
     mode=$(stat -f '%Lp' "$settings" 2>/dev/null || stat -c '%a' "$settings" 2>/dev/null || echo 644)
@@ -126,7 +124,6 @@ fi
 claude_dir="$HOME/.claude"
 if [ -d "$claude_dir" ]; then
   mkdir -p "$claude_dir/hooks" "$claude_dir/scripts" "$claude_dir/commands"
-  install_asset claude/hooks/session-auto-name.sh     "$claude_dir/hooks/session-auto-name.sh"     755 sh
   install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    755 sh
   install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 755 sh
   install_asset claude/scripts/find-session.sh        "$claude_dir/scripts/find-session.sh"        755 sh
