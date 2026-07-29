@@ -54,6 +54,43 @@ validate_asset() {
   esac
 }
 
+# 은퇴한 자산을 사용자 홈에서 걷어낸다.
+#
+# 설치기는 설치만 하므로, 정본에서 자산을 지워도 이미 깔린 환경에서는 파일과 등록이 그대로 남아
+# 계속 동작한다. 그래서 "지웠다"가 실제로 지워지려면 철거 경로가 필요하다.
+#
+# 우리가 설치했던 것만, 경로가 정확히 일치할 때만 지운다 (사용자의 다른 훅은 건드리지 않는다).
+# 목록은 추가만 하고 지우지 않는다 — 오래 안 켠 환경도 언젠가 켜면 정리되어야 한다.
+RETIRED_HOOKS="session-auto-name.sh"
+
+retire_assets() {
+  local settings="$1" f tmp mode cmd
+  for f in $RETIRED_HOOKS; do
+    rm -f "$HOME/.claude/hooks/$f"
+  done
+
+  [ -f "$settings" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  jq -e . "$settings" >/dev/null 2>&1 || return 0
+
+  for f in $RETIRED_HOOKS; do
+    cmd="$HOME/.claude/hooks/$f"
+    grep -qF "$cmd" "$settings" || continue
+    tmp=$(mktemp)
+    # 해당 command 를 가진 항목만 빼고, 그래서 비게 된 그룹도 함께 정리한다.
+    if jq --arg cmd "$cmd" '
+         .hooks |= with_entries(
+           .value |= (map(.hooks |= map(select(.command != $cmd))) | map(select((.hooks | length) > 0)))
+         )
+         | .hooks |= with_entries(select((.value | length) > 0))
+       ' "$settings" >"$tmp" 2>/dev/null && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
+      mode=$(stat -f '%Lp' "$settings" 2>/dev/null || stat -c '%a' "$settings" 2>/dev/null || echo 644)
+      install -m "$mode" "$tmp" "$settings"
+    fi
+    rm -f "$tmp"
+  done
+}
+
 # 세션 훅(UserPromptSubmit)을 사용자 settings.json 에 등록한다. 이 설치기가 **사용자 개인 설정을 고치는 유일한 지점**이라
 # 가장 보수적으로 다룬다.
 #   - 멱등: 같은 command 가 이미 있으면 아무것도 하지 않는다 (중복 등록 방지).
@@ -134,6 +171,7 @@ if [ -d "$claude_dir" ]; then
   install_asset skills/retitle.md      "$claude_dir/commands/retitle.md"      644 md
   install_asset skills/find-session.md "$claude_dir/commands/find-session.md" 644 md
 
+  retire_assets "$claude_dir/settings.json"
   register_session_hooks "$claude_dir/settings.json"
 fi
 
