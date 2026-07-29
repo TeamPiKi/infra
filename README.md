@@ -39,6 +39,8 @@ infra/
   conventions/   # 규약 (이미 통일된 기준선 + 이 repo 자산의 작성 규칙)
     infra.md     # terraform state·컨테이너 배포단위·네트워크 격리 (등급 A)
     blocks.md    # 블록 작성 원칙 (실행위치 중립·값 미소유·종료코드·셀프검증)
+    testing.md   # 테스트 컨벤션 원칙 (스택 무관 + JVM/Spring 공통) — install.sh 가 소비 repo 의
+                 # .claude/rules/testing-principles.md 로 설치, 언어 바인딩은 각 repo 소유
   contracts/     # 서비스 간 배포 계약 (판정 방식·규약)
     health.md    # 헬스체크 계약 (첫 통일 대상)
   blocks/        # 실행 위치 중립 공유 스크립트 (순수 bash)
@@ -111,3 +113,10 @@ infra/
       다루는 첫 자산**이라 그 영역만 규칙을 더 세게 뒀다: 등록은 없을 때만(멱등), 다른 훅은
       무간섭, `~/.claude/.no-session-hooks` 로 opt-out, jq 부재·JSON 손상·설정 파일 부재면 무동작.
       제목 갱신은 방출(캐시)과 계산(백그라운드 haiku)을 분리해 프롬프트 지연이 0 이다.
+- [x] 테스트 컨벤션 원칙 SSOT 화 (2026-07-29) — core(Kotlin)의 규약을 extractor(Java)가 "번역판"으로
+      복제해 두 벌이 존재했다. 복제본은 원문을 손으로 따라가야 해 실제로 리브랜딩 후 한동안 옛
+      이름(`PIKI-Server`)을 가리키다 뒤늦게 정정된 이력이 있다(복제 유지비용의 실증). **원칙과 바인딩을 갈라** 원칙만 `conventions/testing.md` 로
+      올린다 — 1장 스택 무관(분류·가치 판단·결정 트리·모킹 금지·셋업·네이밍·기계 강제), 2장
+      JVM·Spring 공통(컨텍스트 캐싱·E2E 격리·동시성). 언어 문법에 묶이는 것(메서드명 표기·단언
+      라이브러리·DB 컨테이너·좌표·메타 테스트 구현)은 각 repo 가 소유한다. 스킬과 달리 규약은
+      에이전트 컨텍스트에 상주해야 효력이 있어 `.claude/rules/` 로 설치하고 CLAUDE.md 가 import 한다.
