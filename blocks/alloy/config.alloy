@@ -165,21 +165,29 @@ loki.process "app_logs" {
   // 비-JSON 라인(비-ECS 서비스·구버전 컨테이너의 평문 로그 등)은 stage.json 이 조용히 무시하고 라인을 보존한다.
   stage.json {
     expressions = {
-      msg      = "message",
-      trace_id = "traceId",
-      span_id  = "spanId",
-      logger   = "log.logger",
-      level    = "log.level",
+      msg         = "message",
+      trace_id    = "traceId",
+      span_id     = "spanId",
+      logger      = "log.logger",
+      level       = "log.level",
+      error_type  = "error.type",
+      stack_trace = "error.stack_trace",
     }
   }
 
   // 고카디널리티(trace_id)·중카디널리티(logger)는 인덱스 없는 structured metadata 로.
   // 빈 문자열 = 위 stage.json 이 추출한 동명 변수를 그대로 쓴다.
+  // error_type·stack_trace: 본문을 message 로 교체(아래 stage.output)하면 예외 스택이 유실되어
+  // ERROR 부검이 박스 SSH(docker logs raw JSON) 없이는 불가능했다(2026-07-29 실측 - core servlet
+  // 예외 부검이 Grafana 만으론 막힘). 스택은 예외 라인에만 존재해 볼륨 부담이 없고, metadata 라
+  // 스트림도 안 쪼갠다. 예외 없는 라인은 빈 값이라 Grafana 상세에 표시되지 않는다.
   stage.structured_metadata {
     values = {
-      trace_id = "",
-      span_id  = "",
-      logger   = "",
+      trace_id    = "",
+      span_id     = "",
+      logger      = "",
+      error_type  = "",
+      stack_trace = "",
     }
   }
 
