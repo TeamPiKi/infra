@@ -41,12 +41,10 @@ install_asset() {
   fi
   rm -f "$tmp"
 
-  # 경로와 함께 **그 파일의 지문**을 기록한다.
-  # - 경로는 성공 여부와 무관하게 적는다: 오프라인으로 fetch 가 실패한 자산을 "정본에서
-  #   사라진 것" 으로 오인해 지우는 사고를 막기 위해(기록은 결과가 아니라 선언이다).
-  # - 지문은 설치 시도 **후** 디스크 상태에서 뽑는다. 나중에 이 자산이 은퇴할 때
-  #   "내가 깔아둔 그 파일이 맞나" 를 확인하는 대조본이 된다.
-  MANIFEST="$MANIFEST$2	$(file_fingerprint "$2")
+  # 설치 성공 여부와 무관하게 "이번 버전이 설치하려는 목록" 에 기록한다.
+  # 결과가 아니라 선언을 기록해야 오프라인으로 fetch 가 실패한 자산을 "정본에서 사라진 것" 으로
+  # 오인해 지우지 않는다.
+  MANIFEST="$MANIFEST$2
 "
 }
 
@@ -72,17 +70,6 @@ validate_asset() {
 # 목록은 추가만 하고 지우지 않는다 — 오래 안 켠 환경도 언젠가 켜면 정리되어야 한다.
 MANIFEST=""
 
-# 파일 내용의 지문. 도구는 환경마다 다르므로 있는 것을 쓴다. 파일이 없거나 도구가 없으면 "-".
-file_fingerprint() {
-  [ -f "$1" ] || { printf '%s' "-"; return; }
-  if command -v shasum >/dev/null 2>&1; then
-    shasum "$1" 2>/dev/null | awk '{print $1}'
-  elif command -v sha1sum >/dev/null 2>&1; then
-    sha1sum "$1" 2>/dev/null | awk '{print $1}'
-  else
-    printf '%s' "-"
-  fi
-}
 
 # 매니페스트가 기록한 경로만, 그것도 우리가 쓰는 설치 위치 안에 있을 때만 지운다.
 # 매니페스트 파일이 손상되거나 남이 편집했을 때 엉뚱한 경로가 지워지는 것을 막는 마지막 방어선이다.
@@ -127,23 +114,13 @@ unregister_hook() {
 reconcile_manifest() {
   local manifest="$1" current="$2" settings="$3" old
   if [ -f "$manifest" ]; then
-    local old_path old_print now_print
+    local old_path
     while IFS= read -r old || [ -n "$old" ]; do
       [ -n "$old" ] || continue
-      old_path=${old%%	*}                                       # 경로 (탭 앞)
-      old_print=${old#*	}                                        # 지문 (탭 뒤)
-      [ "$old_print" = "$old" ] && old_print="-"                  # 지문 칸이 없는 옛 기록
+      old_path=${old%%	*}                                       # 옛 기록이 지문을 달고 있으면 경로만 취한다
 
       printf '%s\n' "$current" | cut -f1 | grep -qxF "$old_path" && continue  # 이번에도 설치 대상
       is_managed_path "$old_path" || continue                     # 관리 밖 경로는 손대지 않는다
-
-      # 지문 대조 — 내가 깔아둔 그 파일이 맞을 때만 지운다.
-      # 다르면 사용자가 고쳤거나 애초에 우리 것이 아니므로 그대로 둔다. 지우지 않아 남는 고아
-      # 파일보다, 남의 파일을 말없이 지우는 쪽이 훨씬 비싼 실수다.
-      if [ "$old_print" != "-" ]; then
-        now_print=$(file_fingerprint "$old_path")
-        [ "$now_print" = "$old_print" ] || continue
-      fi
 
       rm -f "$old_path"
       unregister_hook "$old_path" "$settings"
@@ -221,7 +198,7 @@ register_session_hooks() {
 # ---- 자산 목록 (여기만 고치면 모든 소비 repo 에 반영된다) ----
 
 # git hooks — 비버전 영역(.git/hooks)에 설치되므로 self 모드(infra 자신)에서도 무해하다.
-install_asset hooks/commit-msg "$hooks_dir/commit-msg" 755 sh
+install_asset hooks/commit-msg "$hooks_dir/commit-msg" 555 sh
 
 # 개발 스킬(slash command) — 소비 repo 의 .claude/commands 에 설치한다.
 # self 모드(infra 자신)에서는 설치하지 않는다: 스킬은 버전 영역(.claude/commands)에 들어가
@@ -231,20 +208,20 @@ install_asset hooks/commit-msg "$hooks_dir/commit-msg" 755 sh
 if [ "$self" = 0 ]; then
   cmd_dir="$repo_root/.claude/commands"
   mkdir -p "$cmd_dir"
-  install_asset skills/commit.md     "$cmd_dir/commit.md"     644 md
-  install_asset skills/commit.md     "$cmd_dir/gc.md"         644 md
-  install_asset skills/coderabbit.md "$cmd_dir/coderabbit.md" 644 md
-  install_asset skills/pr.md         "$cmd_dir/pr.md"         644 md
-  install_asset skills/issue.md      "$cmd_dir/issue.md"      644 md
-  install_asset skills/session-check.md "$cmd_dir/session-check.md" 644 md
-  install_asset skills/session-close.md "$cmd_dir/session-close.md" 644 md
+  install_asset skills/commit.md     "$cmd_dir/commit.md"     444 md
+  install_asset skills/commit.md     "$cmd_dir/gc.md"         444 md
+  install_asset skills/coderabbit.md "$cmd_dir/coderabbit.md" 444 md
+  install_asset skills/pr.md         "$cmd_dir/pr.md"         444 md
+  install_asset skills/issue.md      "$cmd_dir/issue.md"      444 md
+  install_asset skills/session-check.md "$cmd_dir/session-check.md" 444 md
+  install_asset skills/session-close.md "$cmd_dir/session-close.md" 444 md
 
   # 규약 문서 — 소비 repo 의 .claude/rules 에 설치하고, 각 repo 의 CLAUDE.md 가 import 해 자동 로드한다.
   # 스킬(행동 절차)과 달리 이건 판단 기준이라 에이전트 컨텍스트에 상주해야 효력이 있다.
   # 언어·스택 바인딩은 각 repo 가 자기 문서에 소유하고, 여기서는 공통 원칙만 내려보낸다.
   rules_dir="$repo_root/.claude/rules"
   mkdir -p "$rules_dir"
-  install_asset conventions/testing.md "$rules_dir/testing-principles.md" 644 md
+  install_asset conventions/testing.md "$rules_dir/testing-principles.md" 444 md
 fi
 
 # 세션 훅·유틸 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이다.
@@ -258,15 +235,15 @@ fi
 claude_dir="$HOME/.claude"
 if [ -d "$claude_dir" ]; then
   mkdir -p "$claude_dir/hooks" "$claude_dir/scripts" "$claude_dir/commands"
-  install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    755 sh
-  install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 755 sh
-  install_asset claude/scripts/find-session.sh        "$claude_dir/scripts/find-session.sh"        755 sh
+  install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    555 sh
+  install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 555 sh
+  install_asset claude/scripts/find-session.sh        "$claude_dir/scripts/find-session.sh"        555 sh
 
   # 세션 스킬은 repo 스킬(commit·pr·issue…)과 달리 **전역**으로 설치한다. 세션 관리는 repo 를
   # 건드리지 않는 일이라 piki repo 밖(다른 repo·빈 디렉토리)에서도 필요하고, 전역에 두면 소비 repo
   # 3곳에 .gitignore 를 더할 이유도 없어진다. 정본이 하나이므로 repo 사본과의 drift 도 생기지 않는다.
-  install_asset skills/retitle.md      "$claude_dir/commands/retitle.md"      644 md
-  install_asset skills/find-session.md "$claude_dir/commands/find-session.md" 644 md
+  install_asset skills/retitle.md      "$claude_dir/commands/retitle.md"      444 md
+  install_asset skills/find-session.md "$claude_dir/commands/find-session.md" 444 md
 
   retire_assets "$claude_dir/settings.json"
   register_session_hooks "$claude_dir/settings.json"
