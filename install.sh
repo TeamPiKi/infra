@@ -20,6 +20,7 @@ INFRA_REPO="TeamPiKi/infra"
 
 hooks_dir="$(git rev-parse --git-common-dir 2>/dev/null)/hooks"
 [ -d "$hooks_dir" ] || exit 0
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
 
 if git remote get-url origin 2>/dev/null | grep -q "TeamPiKi/infra"; then
   self=1   # infra 자신 안에서 실행 (SSOT repo)
@@ -34,6 +35,11 @@ fi
 # 그 위에 유형별 검증을 얹는다 (validate_asset).
 install_asset() {
   local tmp
+  # 성공 여부와 무관하게 "이번 버전이 설치하려는 목록" 에 기록한다.
+  # 결과가 아니라 선언을 기록해야 한다 — 오프라인이라 fetch 가 실패한 자산을
+  # "정본에서 사라진 것" 으로 오인해 지워버리는 사고를 막는다.
+  MANIFEST="$MANIFEST$2
+"
   tmp=$(mktemp)
   if get "$1" >"$tmp" && [ -s "$tmp" ] && validate_asset "$tmp" "$4"; then
     install -m "$3" "$tmp" "$2"
@@ -61,6 +67,68 @@ validate_asset() {
 #
 # 우리가 설치했던 것만, 경로가 정확히 일치할 때만 지운다 (사용자의 다른 훅은 건드리지 않는다).
 # 목록은 추가만 하고 지우지 않는다 — 오래 안 켠 환경도 언젠가 켜면 정리되어야 한다.
+MANIFEST=""
+
+# 매니페스트가 기록한 경로만, 그것도 우리가 쓰는 설치 위치 안에 있을 때만 지운다.
+# 매니페스트 파일이 손상되거나 남이 편집했을 때 엉뚱한 경로가 지워지는 것을 막는 마지막 방어선이다.
+is_managed_path() {
+  case "$1" in
+    "$HOME/.claude/hooks/"*|"$HOME/.claude/scripts/"*|"$HOME/.claude/commands/"*) return 0 ;;
+  esac
+  [ -n "${repo_root:-}" ] && case "$1" in
+    "$repo_root/.claude/commands/"*|"$repo_root/.claude/rules/"*) return 0 ;;
+  esac
+  [ -n "${hooks_dir:-}" ] && case "$1" in
+    "$hooks_dir/"*) return 0 ;;
+  esac
+  return 1
+}
+
+# settings.json 에서 그 경로를 실행하는 등록만 뺀다 (빈 그룹·이벤트 키도 함께 정리).
+unregister_hook() {
+  local cmd="$1" settings="$2" tmp mode
+  [ -f "$settings" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  jq -e . "$settings" >/dev/null 2>&1 || return 0
+  grep -qF "$cmd" "$settings" || return 0
+  tmp=$(mktemp)
+  if jq --arg cmd "$cmd" '
+       .hooks |= with_entries(
+         .value |= (map(.hooks |= map(select(.command != $cmd))) | map(select((.hooks | length) > 0)))
+       )
+       | .hooks |= with_entries(select((.value | length) > 0))
+     ' "$settings" >"$tmp" 2>/dev/null && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
+    mode=$(stat -f '%Lp' "$settings" 2>/dev/null || stat -c '%a' "$settings" 2>/dev/null || echo 644)
+    install -m "$mode" "$tmp" "$settings"
+  fi
+  rm -f "$tmp"
+}
+
+# 지난 설치 기록과 이번 설치 목록의 차집합이 곧 은퇴 자산이다.
+#
+# 이 방식의 요점은 사람이 은퇴를 선언하지 않아도 된다는 것이다 — 정본에서 파일을 지우면
+# 다음 실행에서 설치기가 스스로 알아낸다. 잊어버릴 수 있는 절차를 기계가 대신한다.
+# 매니페스트가 없으면(첫 실행) 비교 대상이 없으므로 아무것도 지우지 않는다.
+reconcile_manifest() {
+  local manifest="$1" current="$2" settings="$3" old
+  if [ -f "$manifest" ]; then
+    while IFS= read -r old || [ -n "$old" ]; do
+      [ -n "$old" ] || continue
+      printf '%s\n' "$current" | grep -qxF "$old" && continue   # 이번에도 설치 대상이면 유지
+      is_managed_path "$old" || continue                         # 관리 밖 경로는 손대지 않는다
+      rm -f "$old"
+      unregister_hook "$old" "$settings"
+    done < "$manifest"
+  fi
+  if [ -n "$current" ]; then
+    printf '%s\n' "$current" > "$manifest"
+  else
+    : > "$manifest"
+  fi
+}
+
+# 매니페스트 이전 시대(#27)에 깔린 자산 — 그 시절엔 기록이 없어 차집합으로 못 잡는다.
+# 한 번도 갱신 안 한 환경을 위해 남겨 둔다. **새 은퇴는 여기 적을 필요가 없다.**
 RETIRED_HOOKS="session-auto-name.sh"
 
 retire_assets() {
@@ -132,7 +200,7 @@ install_asset hooks/commit-msg "$hooks_dir/commit-msg" 755 sh
 # 스킬은 소비 repo 를 위한 자산이고 infra 는 그 생산자다 — infra 자신은 소비자가 아니라 스킵한다.
 # gc 는 commit 의 별칭이라 같은 정본을 두 이름으로 설치한다 (정본은 하나, 표면만 둘).
 if [ "$self" = 0 ]; then
-  cmd_dir="$(git rev-parse --show-toplevel)/.claude/commands"
+  cmd_dir="$repo_root/.claude/commands"
   mkdir -p "$cmd_dir"
   install_asset skills/commit.md     "$cmd_dir/commit.md"     644 md
   install_asset skills/commit.md     "$cmd_dir/gc.md"         644 md
@@ -145,7 +213,7 @@ if [ "$self" = 0 ]; then
   # 규약 문서 — 소비 repo 의 .claude/rules 에 설치하고, 각 repo 의 CLAUDE.md 가 import 해 자동 로드한다.
   # 스킬(행동 절차)과 달리 이건 판단 기준이라 에이전트 컨텍스트에 상주해야 효력이 있다.
   # 언어·스택 바인딩은 각 repo 가 자기 문서에 소유하고, 여기서는 공통 원칙만 내려보낸다.
-  rules_dir="$(git rev-parse --show-toplevel)/.claude/rules"
+  rules_dir="$repo_root/.claude/rules"
   mkdir -p "$rules_dir"
   install_asset conventions/testing.md "$rules_dir/testing-principles.md" 644 md
 fi
@@ -174,5 +242,19 @@ if [ -d "$claude_dir" ]; then
   retire_assets "$claude_dir/settings.json"
   register_session_hooks "$claude_dir/settings.json"
 fi
+
+# ---- 은퇴 자산 정리 (지난 설치 기록과의 차집합) ----
+#
+# 홈과 repo 를 따로 기록한다. 홈 자산은 머신당 하나, repo 자산은 repo 마다 다르기 때문에
+# 한 파일에 섞으면 A repo 에서 켤 때 B repo 의 설치본이 "사라진 것" 으로 오인된다.
+# repo 쪽 기록은 .git 안(비버전)에 둬 워크트리가 여러 개여도 공유된다.
+home_manifest="$HOME/.claude/.piki-manifest"
+repo_manifest="$(git rev-parse --git-common-dir 2>/dev/null)/piki-manifest"
+
+home_list=$(printf '%s' "$MANIFEST" | grep "^$HOME/.claude/" || true)
+repo_list=$(printf '%s' "$MANIFEST" | grep -v "^$HOME/.claude/" || true)
+
+[ -d "$HOME/.claude" ] && reconcile_manifest "$home_manifest" "$home_list" "$HOME/.claude/settings.json"
+reconcile_manifest "$repo_manifest" "$repo_list" ""
 
 exit 0
