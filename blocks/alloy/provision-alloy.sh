@@ -112,6 +112,16 @@ INSTALLED="$INSTALL_DIR/config.alloy"
 $SUDO mkdir -p "$INSTALL_DIR"
 $SUDO cp "$CONFIG" "$INSTALLED"
 
+# ── 데이터 경로 (positions 영속화) ──
+# 읽기 위치(loki.source.docker 의 positions.yml)는 storage.path 밑에 쌓인다. 컨테이너 안에만 두면
+# 아래 rm -f 재기동마다 위치가 유실돼, 새 수집기가 떠 있는 앱 컨테이너의 로그를 처음부터 재전송한다
+# — 도착 시점에 40분(time_sharding_ignore_recent) 넘게 지난 라인은 Grafana Cloud 가 __time_shard__
+# 스트림으로 받아 원본과 별개로 저장돼 중복이 된다(2026-08 core 로그 실측 약 1.4배). config 와 같은
+# 이유로 재부팅에도 남는 고정 경로에 둔다. --storage.path 를 명시하는 이유: 미지정 시 기본값이 CWD
+# 상대(data-alloy/)라 이미지 내부 구조(작업 디렉터리)에 묶여 마운트 대상이 흔들린다.
+DATA_DIR="/var/lib/piki-alloy/data"
+$SUDO mkdir -p "$DATA_DIR"
+
 # ── (재)기동 ──
 # --network host: 앱 포트가 127.0.0.1 바인딩이라 호스트 루프백으로 scrape 하고, host-gateway 로 들어오는
 #   앱 OTLP push 를 받는다. 마운트: docker.sock(컨테이너 SD)·/proc·/sys·/(호스트 메트릭). :ro 로 읽기 전용.
@@ -119,6 +129,7 @@ echo "run: $IMAGE (name=$NAME, network=host, listen=$LISTEN_ADDR)"
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" --restart unless-stopped --network host \
   -v "$INSTALLED":/etc/alloy/config.alloy:ro \
+  -v "$DATA_DIR":/var/lib/alloy/data \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -v /proc:/host/proc:ro,rslave \
   -v /sys:/host/sys:ro,rslave \
@@ -133,7 +144,7 @@ docker run -d --name "$NAME" --restart unless-stopped --network host \
   -e GRAFANA_TRACES_USER="$TRACES_USER" \
   -e GRAFANA_CLOUD_TOKEN="$CLOUD_TOKEN" \
   "$IMAGE" \
-  run --server.http.listen-addr="$LISTEN_ADDR" /etc/alloy/config.alloy >/dev/null
+  run --server.http.listen-addr="$LISTEN_ADDR" --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy >/dev/null
 
 # ── 기동 확인 ──
 # 즉시 죽는 config/런타임 오류를 잡는다. validate 를 통과해도 런타임에서 죽을 수 있으니 실제 상태를 본다.
