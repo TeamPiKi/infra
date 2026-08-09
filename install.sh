@@ -200,25 +200,26 @@ register_session_hooks() {
 # git hooks — 비버전 영역(.git/hooks)에 설치되므로 self 모드(infra 자신)에서도 무해하다.
 install_asset hooks/commit-msg "$hooks_dir/commit-msg" 555 sh
 
-# 개발 스킬(slash command) — 소비 repo 의 .claude/commands 에 설치한다.
-# self 모드(infra 자신)에서는 설치하지 않는다: 스킬은 버전 영역(.claude/commands)에 들어가
-# infra working tree 에 untracked 파일을 남기지만, 훅(.git/hooks)은 비버전이라 그 문제가 없다.
-# 스킬은 소비 repo 를 위한 자산이고 infra 는 그 생산자다 — infra 자신은 소비자가 아니라 스킵한다.
+# 개발 스킬(slash command) — repo 의 .claude/commands 에 설치한다. infra 자신(self 모드)도 포함한다:
+# infra 에서도 커밋·PR 이 일어나므로 같은 절차 스킬이 필요하다 (infra#32 를 스킬 없이 수동 STAR 로
+# 올린 것이 계기). self 모드의 get() 은 working tree 를 읽으므로 스킬 정본을 고치면 자기 세션에
+# 즉시 반영되는 드라이푸딩도 된다. 버전 영역의 untracked 노이즈는 .gitignore(.claude/commands/)가 막는다.
 # gc 는 commit 의 별칭이라 같은 정본을 두 이름으로 설치한다 (정본은 하나, 표면만 둘).
-if [ "$self" = 0 ]; then
-  cmd_dir="$repo_root/.claude/commands"
-  mkdir -p "$cmd_dir"
-  install_asset skills/commit.md     "$cmd_dir/commit.md"     444 md
-  install_asset skills/commit.md     "$cmd_dir/gc.md"         444 md
-  install_asset skills/coderabbit.md "$cmd_dir/coderabbit.md" 444 md
-  install_asset skills/pr.md         "$cmd_dir/pr.md"         444 md
-  install_asset skills/issue.md      "$cmd_dir/issue.md"      444 md
-  install_asset skills/session-check.md "$cmd_dir/session-check.md" 444 md
-  install_asset skills/session-close.md "$cmd_dir/session-close.md" 444 md
+cmd_dir="$repo_root/.claude/commands"
+mkdir -p "$cmd_dir"
+install_asset skills/commit.md     "$cmd_dir/commit.md"     444 md
+install_asset skills/commit.md     "$cmd_dir/gc.md"         444 md
+install_asset skills/coderabbit.md "$cmd_dir/coderabbit.md" 444 md
+install_asset skills/pr.md         "$cmd_dir/pr.md"         444 md
+install_asset skills/issue.md      "$cmd_dir/issue.md"      444 md
+install_asset skills/session-check.md "$cmd_dir/session-check.md" 444 md
+install_asset skills/session-close.md "$cmd_dir/session-close.md" 444 md
 
-  # 규약 문서 — 소비 repo 의 .claude/rules 에 설치하고, 각 repo 의 CLAUDE.md 가 import 해 자동 로드한다.
-  # 스킬(행동 절차)과 달리 이건 판단 기준이라 에이전트 컨텍스트에 상주해야 효력이 있다.
-  # 언어·스택 바인딩은 각 repo 가 자기 문서에 소유하고, 여기서는 공통 원칙만 내려보낸다.
+# 규약 문서 — 소비 repo 의 .claude/rules 에 설치하고, 각 repo 의 CLAUDE.md 가 import 해 자동 로드한다.
+# 스킬(행동 절차)과 달리 이건 판단 기준이라 에이전트 컨텍스트에 상주해야 효력이 있다.
+# 언어·스택 바인딩은 각 repo 가 자기 문서에 소유하고, 여기서는 공통 원칙만 내려보낸다.
+# 스킬과 달리 infra 자신은 제외한다 — import 할 CLAUDE.md 가 없고, JVM·Spring 원칙이라 대상도 아니다.
+if [ "$self" = 0 ]; then
   rules_dir="$repo_root/.claude/rules"
   mkdir -p "$rules_dir"
   install_asset conventions/testing.md "$rules_dir/testing-principles.md" 444 md
