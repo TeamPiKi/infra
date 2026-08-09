@@ -90,8 +90,10 @@ infra/
 - [x] 소비 repo 배선: extractor(PR #1 머지) · core(PR #711 머지, 체크인 훅 삭제 + 스킬 타입
       열거 제거 포함) · renderer(origin/main 부트스트랩 배선 반영 확인 — 보류 해소, 2026-07-20)
 - [x] 개발 스킬 SSOT 화 (`skills/commit.md` · `skills/coderabbit.md`) — 좌표를 origin 에서 파생해
-      repo 무관하게 만든 뒤 승격. `install.sh` 가 소비 repo 의 `.claude/commands/` 로 설치하고
-      (`gc` 는 `commit` 별칭), self 모드(infra 자신)에서는 버전 영역 오염을 피해 스킵한다.
+      repo 무관하게 만든 뒤 승격. `install.sh` 가 repo 의 `.claude/commands/` 로 설치한다
+      (`gc` 는 `commit` 별칭). self 모드(infra 자신)는 처음엔 버전 영역 오염을 피해 스킵했으나,
+      infra 에서도 커밋·PR 이 일어나 설치 대상에 포함했다 (#33 — untracked 노이즈는
+      `.gitignore` 의 `.claude/commands/` 가 막는다. 규약 문서는 소비 repo 한정 유지).
       `issue`·`pr` 도 좌표를 repo 무관화해 승격 (2026-07-20) — base 브랜치를 origin/dev → repo
       default 로 파생, core 전용 워크플로(pr-merge-project-sync) 언급을 한정. 보드·Issue Type ID 는
       org 상수라 그대로 둔다. 스킬 전제인 분류 라벨 9종(라벨==브랜치 prefix 1:1)을
