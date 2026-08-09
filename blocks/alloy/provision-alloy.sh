@@ -122,6 +122,17 @@ $SUDO cp "$CONFIG" "$INSTALLED"
 DATA_DIR="/var/lib/piki-alloy/data"
 $SUDO mkdir -p "$DATA_DIR"
 
+# ── textfile 지표 경로 ──
+# 배치성 작업이 결과를 .prom 으로 써 두면 호스트 메트릭에 얹혀 함께 전송된다(config.alloy 의
+# prometheus.exporter.unix textfile 블록). node_exporter 의 관례 경로를 그대로 쓴다.
+#
+# 여기서 mkdir 을 하는 이유: 없는 경로를 -v 로 마운트하면 docker 가 호스트에 root 소유
+# 디렉터리를 만들어 버려, 지표를 쓰는 쪽(백업 스크립트 등)이 권한에 걸릴 수 있다. 미리
+# 만들어 두면 소유·권한이 예측 가능해진다. 쓰는 쪽이 없는 박스에서는 빈 디렉터리로 남고
+# collector 가 아무 지표도 안 읽으므로, 그 박스에는 아무 영향이 없다.
+TEXTFILE_DIR="/var/lib/node_exporter/textfile"
+$SUDO mkdir -p "$TEXTFILE_DIR"
+
 # ── (재)기동 ──
 # --network host: 앱 포트가 127.0.0.1 바인딩이라 호스트 루프백으로 scrape 하고, host-gateway 로 들어오는
 #   앱 OTLP push 를 받는다. 마운트: docker.sock(컨테이너 SD)·/proc·/sys·/(호스트 메트릭). :ro 로 읽기 전용.
@@ -138,6 +149,7 @@ docker run -d --name "$NAME" --restart unless-stopped --network host \
   -v /proc:/host/proc:ro,rslave \
   -v /sys:/host/sys:ro,rslave \
   -v /:/host/root:ro,rslave \
+  -v "$TEXTFILE_DIR":/host/textfile:ro \
   -e ENVIRONMENT="$ENVIRONMENT" \
   -e PIKI_BOX="$BOX" \
   -e GRAFANA_METRICS_URL="$METRICS_URL" \
