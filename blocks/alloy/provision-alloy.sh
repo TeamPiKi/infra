@@ -126,6 +126,10 @@ $SUDO mkdir -p "$DATA_DIR"
 # --network host: 앱 포트가 127.0.0.1 바인딩이라 호스트 루프백으로 scrape 하고, host-gateway 로 들어오는
 #   앱 OTLP push 를 받는다. 마운트: docker.sock(컨테이너 SD)·/proc·/sys·/(호스트 메트릭). :ro 로 읽기 전용.
 echo "run: $IMAGE (name=$NAME, network=host, listen=$LISTEN_ADDR)"
+# 교체 전 정상 종료 우선 — rm -f 단독은 SIGKILL 이라 positions 의 마지막 sync(10s 주기) 이후
+# 오프셋과 loki.write 미전송 배치가 유실된다. stop 이 종료 flush(positions 저장·배치 전송)를
+# 보장하고, rm -f 는 stop 실패·잔재 정리의 fallback 으로 남긴다.
+docker stop --timeout 15 "$NAME" >/dev/null 2>&1 || true
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" --restart unless-stopped --network host \
   -v "$INSTALLED":/etc/alloy/config.alloy:ro \
