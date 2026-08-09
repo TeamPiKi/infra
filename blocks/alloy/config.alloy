@@ -244,6 +244,20 @@ prometheus.exporter.unix "host" {
     fs_types_exclude     = "^(autofs|binfmt_misc|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|sysfs|tracefs)$"
     mount_timeout        = "5s"
   }
+
+  // 시스템이 직접 주지 않는 지표를 파일로 받는 자리다. 배치성 작업(cron 등)은 상시 노출할
+  // 엔드포인트가 없어 스크랩 대상이 못 되는데, 결과를 이 디렉터리에 .prom 으로 써 두면
+  // 호스트 메트릭에 얹혀 함께 전송된다.
+  //
+  // 첫 소비자는 core 의 DB 백업이다(마지막 성공 시각·크기·상태). "백업이 며칠째 성공하지
+  // 못했다"는 판단은 그 지표가 있어야 가능하고, 실패 알림만으로는 스크립트가 아예 실행되지
+  // 않은 침묵을 못 잡는다.
+  //
+  // 이 디렉터리가 없는 박스에서는 아무 지표도 안 읽고 그대로 넘어간다 — extractor·renderer 는
+  // 영향을 받지 않는다. 경로는 provision-alloy.sh 가 호스트에서 읽기 전용으로 마운트한다.
+  textfile {
+    directory = "/host/textfile"
+  }
 }
 
 prometheus.scrape "host" {
