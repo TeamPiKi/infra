@@ -35,7 +35,8 @@ server 가 풀세트, 나머지는 그 부분집합. 환경 차이의 대부분�
 
 ```
 infra/
-  install.sh     # 공통 자산 설치기 (정본) — 자산 목록·설치 위치·실패 처리를 여기만 안다
+  install.sh     # 개발 규약 자산 설치기 (정본) — 자산 목록·설치 위치·실패 처리를 여기만 안다.
+                 # 배포 갈래(blocks·contracts)는 설치 대상이 아니다 — 각 서비스 deploy 가 원격 fetch 로 소비
   conventions/   # 규약 (이미 통일된 기준선 + 이 repo 자산의 작성 규칙)
     infra.md     # terraform state·컨테이너 배포단위·네트워크 격리 (등급 A)
     blocks.md    # 블록 작성 원칙 (실행위치 중립·값 미소유·종료코드·셀프검증)
@@ -44,7 +45,7 @@ infra/
   contracts/     # 서비스 간 배포 계약 (판정 방식·규약)
     health.md    # 헬스체크 계약 (첫 통일 대상)
     observability.md  # 관측 계약 (Alloy 수집·라벨·로그 형식)
-  blocks/        # 실행 위치 중립 공유 스크립트 (순수 bash)
+  blocks/        # 실행 위치 중립 공유 블록 (bash 스크립트 + 관측 설정)
     healthcheck.sh
     healthcheck.test.sh
     run_container.sh
