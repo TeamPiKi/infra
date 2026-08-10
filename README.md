@@ -53,7 +53,7 @@ infra/
     alloy/       # 관측 수집기(Alloy) 공통 블록 (config.alloy·provision-alloy.sh)
   hooks/         # git hooks 정본 (commit-msg) — install.sh 가 각 repo 로 설치
   skills/        # 스킬 정본 — install.sh 가 설치한다. repo 워크플로(commit·coderabbit·pr·issue·session-check·session-close)는
-                 # 소비 repo 의 .claude/commands 로, 세션 관리(retitle·find-session)는 repo 무관이라 ~/.claude/commands 로 간다
+                 # 각 repo(infra 자신 포함)의 .claude/commands 로, 세션 관리(retitle·find-session)는 repo 무관이라 ~/.claude/commands 로 간다
   claude/        # Claude Code 세션 자산 정본 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이라 그 구조를 미러링한다
     hooks/       # 세션 훅 (session-title-emit·session-title-compute) — 제목을 대화 맥락으로 갱신
     scripts/     # 세션 유틸 (find-session)
