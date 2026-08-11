@@ -44,6 +44,8 @@ check "알 수 없는 인자 -> exit 2" 2 "$?"
 check "콜론 없는 슬롯 -> exit 2" 2 "$?"
 "$DECIDE" --state-file "$WORKDIR/up.conf" --slot-a blue:1809x --slot-b green:18091 >/dev/null 2>&1
 check "비숫자 포트 -> exit 2" 2 "$?"
+"$DECIDE" --state-file "$WORKDIR/up.conf" --slot-a 'bl;ue:18090' --slot-b green:18091 >/dev/null 2>&1
+check "허용목록 밖 슬롯 이름(eval 주입 표면) -> exit 2" 2 "$?"
 
 # 4. 부트스트랩: 상태 파일 없음 -> INACTIVE = slot-a
 OUT=$("$DECIDE" --state-file "$WORKDIR/none.conf" --slot-a blue:18090 --slot-b green:18091)
