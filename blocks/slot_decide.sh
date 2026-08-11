@@ -58,6 +58,12 @@ parse_slot() {
   case "$PARSED_PORT" in
     *[!0-9]*) echo "$arg_name port must be numeric (got: $value)" >&2; exit 2;;
   esac
+  # 출력이 eval 로 소비되는 계약이라 이름 charset 을 허용목록으로 닫는다 - 지금 호출부는 고정
+  # 리터럴(blue/green)이지만, 훗날 슬롯 이름이 외부 입력을 타는 호출부가 생겨도 eval 이
+  # 명령 주입 표면이 되지 않게 블록이 스스로 막는다.
+  case "$PARSED_NAME" in
+    *[!a-zA-Z0-9_-]*) echo "$arg_name name must match [A-Za-z0-9_-] (got: $value)" >&2; exit 2;;
+  esac
 }
 
 parse_slot "--slot-a" "$SLOT_A"

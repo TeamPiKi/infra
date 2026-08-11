@@ -59,7 +59,13 @@ restore() {
     return 0
   fi
   printf '%s\n' "$PREV" | run_priv tee "$STATE_FILE" >/dev/null
-  run_priv systemctl reload nginx 2>/dev/null || true
+  # 원복 반영도 전환과 같은 폴백(reload -> restart)을 쓴다. reload 만 두고 실패를 삼키면
+  # 상태 파일은 이전 슬롯인데 nginx 런타임은 새 슬롯을 계속 가리키는 창이 남고, 그 사이
+  # 호출자가 새 슬롯 컨테이너를 정리하면 서빙이 끊긴다. restart 폴백이면 그 창이 사라진다:
+  # restart 마저 실패 = nginx 정지이므로, 수동 기동만으로 상태 파일(이전 슬롯) 그대로 복귀한다.
+  if ! { run_priv systemctl reload nginx 2>/dev/null || run_priv systemctl restart nginx 2>/dev/null; }; then
+    echo "restore reload/restart FAILED - nginx 가 정지 상태일 수 있다. 상태 파일은 이전 슬롯으로 원복돼 있어 nginx 기동만으로 복귀된다" >&2
+  fi
   echo "switch FAILED at $stage - restored previous upstream" >&2
 }
 

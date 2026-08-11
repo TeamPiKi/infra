@@ -33,6 +33,7 @@ cat >"$WORKDIR/bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 echo "$*" >>"$FAKE_DIR/systemctl.log"
 [ -f "$FAKE_DIR/systemctl_fail" ] && exit 1
+[ "$1" = "reload" ] && [ -f "$FAKE_DIR/systemctl_reload_fail" ] && exit 1
 exit 0
 EOF
 chmod +x "$WORKDIR/bin/sudo" "$WORKDIR/bin/nginx" "$WORKDIR/bin/systemctl"
@@ -53,7 +54,8 @@ check() {
 }
 
 reset_fakes() {
-  rm -f "$FAKE_DIR/nginx_t_fail" "$FAKE_DIR/systemctl_fail" "$FAKE_DIR/systemctl.log"
+  rm -f "$FAKE_DIR/nginx_t_fail" "$FAKE_DIR/systemctl_fail" "$FAKE_DIR/systemctl_reload_fail" \
+    "$FAKE_DIR/systemctl.log"
 }
 
 # 1. 필수 인자 누락 / 알 수 없는 인자
@@ -96,6 +98,16 @@ echo "server 127.0.0.1:18090;" >"$STATE"
 check "verify 실패 -> exit 1" 1 "$?"
 check "verify 실패 -> 상태 파일 원복" "server 127.0.0.1:18090;" "$(cat "$STATE")"
 check "verify 실패 -> reload 2회(전환+원복)" 2 "$(grep -c "reload nginx" "$FAKE_DIR/systemctl.log")"
+
+# 5b. verify 실패 + 원복 reload 실패 -> restart 폴백으로 원복 반영 (상태·런타임 괴리 창 차단)
+reset_fakes
+echo "server 127.0.0.1:18090;" >"$STATE"
+touch "$FAKE_DIR/systemctl_reload_fail"
+"$SWITCH" --state-file "$STATE" --server 127.0.0.1:18091 --verify-cmd "false" >/dev/null 2>&1
+check "verify 실패 + reload 불가 -> exit 1" 1 "$?"
+check "verify 실패 + reload 불가 -> 상태 파일 원복" "server 127.0.0.1:18090;" "$(cat "$STATE")"
+# 전환(reload 실패 -> restart)과 원복(reload 실패 -> restart)에서 각각 restart 가 불렸다
+check "verify 실패 + reload 불가 -> restart 폴백 2회(전환+원복)" 2 "$(grep -c "restart nginx" "$FAKE_DIR/systemctl.log")"
 
 # 6. verify 성공 -> 전환 유지
 reset_fakes
