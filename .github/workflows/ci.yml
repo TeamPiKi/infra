@@ -40,3 +40,9 @@ jobs:
 
       - name: Run run_container.sh self-test
         run: REQUIRE_DOCKER=1 ./blocks/run_container.test.sh
+
+      - name: Run slot_decide.sh self-test
+        run: ./blocks/slot_decide.test.sh
+
+      - name: Run slot_switch.sh self-test
+        run: ./blocks/slot_switch.test.sh
