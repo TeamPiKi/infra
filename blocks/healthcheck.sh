@@ -20,6 +20,9 @@
 #   --attempts     (필수) 최대 시도 횟수
 #   --timeout      각 요청 curl 타임아웃(초). 기본 5 (서비스 무관 공통값)
 #   --expect-body  (선택) 응답 본문에 포함돼야 할 문자열. 없으면 HTTP 200 만으로 판정
+#   --insecure     (선택 플래그) TLS 인증서 검증 생략(curl -k). 박스 안에서 IP 로 TLS 프론트를
+#                  두드리는 내부 검증용 - cert 가 도메인 앞이라 hostname 만 안 맞는 경우다
+#   --host-header  (선택) Host 헤더 값. IP 접속에서 서버 블록·앱의 host 판정이 필요한 내부 검증용
 #
 # interval·attempts 는 서비스마다 다른 값이라 default 없는 필수 인자다 — 블록은 값을
 # 소유하지 않는다 (conventions/blocks.md 2번 원칙).
@@ -33,6 +36,8 @@ INTERVAL=""
 ATTEMPTS=""
 TIMEOUT=5
 EXPECT_BODY=""
+INSECURE=0
+HOST_HEADER=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -41,6 +46,8 @@ while [ $# -gt 0 ]; do
     --attempts)    ATTEMPTS="${2:-}"; shift 2;;
     --timeout)     TIMEOUT="${2:-}"; shift 2;;
     --expect-body) EXPECT_BODY="${2:-}"; shift 2;;
+    --insecure)    INSECURE=1; shift 1;;
+    --host-header) HOST_HEADER="${2:-}"; shift 2;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
@@ -49,9 +56,13 @@ done
 [ -n "$INTERVAL" ] || { echo "--interval is required" >&2; exit 2; }
 [ -n "$ATTEMPTS" ] || { echo "--attempts is required" >&2; exit 2; }
 
+CURL_ARGS=(-sS -m "$TIMEOUT")
+[ "$INSECURE" = "1" ] && CURL_ARGS+=(-k)
+[ -n "$HOST_HEADER" ] && CURL_ARGS+=(-H "Host: $HOST_HEADER")
+
 for i in $(seq 1 "$ATTEMPTS"); do
   # body 와 http_code 를 한 번에 받아 분리한다 (expect-body 판정 때문에 body 도 캡처).
-  RESP=$(curl -sS -m "$TIMEOUT" -w $'\n%{http_code}' "$URL" 2>/dev/null || printf '\n000')
+  RESP=$(curl "${CURL_ARGS[@]}" -w $'\n%{http_code}' "$URL" 2>/dev/null || printf '\n000')
   CODE="${RESP##*$'\n'}"
   BODY="${RESP%$'\n'*}"
 
