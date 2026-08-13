@@ -1,0 +1,61 @@
+# 추출 실패 code 카탈로그 (정본 데이터)
+#
+# core 와 extractor 가 주고받는 실패 code 의 전수 목록이다. 각 code 가 무엇을 뜻하는지는
+# contracts/extraction-api.md 가 설명하고, 이 파일은 **목록과 기계 판정용 속성**만 갖는다
+# (목록을 두 곳에 두지 않는다).
+#
+# 왜 데이터로 두나: 정본이 소비자 한쪽(extractor 의 docs)에 있으면 따라가지 않아도 정본 쪽은
+# 멀쩡해 어긋남이 조용하다. 실제로 NO_EXTRACTABLE_CONTENT 는 문서에만 있고 core 매핑이 없는 채
+# CI 가 계속 초록불이었다. 기계가 읽을 수 있는 자리로 옮겨 대조를 강제한다.
+#
+# 소비 경로
+#   - CI(강제) — 소비 repo 의 워크플로가 actions/checkout 으로 이 repo 를 shared-infra/ 에 받고,
+#     메타 테스트가 shared-infra/contracts/extraction-error-codes.yaml 을 읽어 자기 enum·매핑과 대조한다.
+#   - 로컬(편의) — install.sh 가 같은 경로에 사본을 깐다. SessionStart 훅이라 CI 에선 돌지 않으므로
+#     강제의 근거가 아니다. 경로를 CI 와 맞춘 이유는 소비 repo 의 테스트가 경로를 하나만 알게 하려는 것.
+#
+# 필드
+#   disposition  permanent = 확정 실패(422, 재시도 무의미) / transient = 일시 실패(호출자 recover 재시도).
+#                런타임 정본은 extractor 예외 팩토리의 permanent 플래그이며, 이 값은 그 플래그의 계약 표기다.
+#   bucket       permanent code 의 운영 분류(뜻은 extraction-api.md). 분류까지 카탈로그가 소유하는 이유는,
+#                각 repo 자유로 두면 "extractor 는 차단으로 보는데 core 는 상품 아님으로 센다" 같은
+#                의미 어긋남이 생기고 그건 기계가 못 잡기 때문이다.
+#                transient 에는 붙이지 않는다 — core 가 세지 않고 recover 가 종결 시 집계한다.
+#   scope        probe = 모델 프로브 전용. 추출 경로가 아니라 bucket 축 밖이다(기본값은 추출 경로).
+#   escalatable  정적 fetch 실패를 헤드리스로 재시도하는 대상인지. fetch 경로(PageFetchException)에만 있는
+#                축이라 그 code 에만 붙는다. Extractor 내부 관심사이며 응답 계약에는 드러나지 않는다(관측·문서용).
+#
+# 진화: additive-only. 추가는 자유, 제거·의미 변경은 금지 (extraction-api.md 의 진화 규칙).
+
+codes:
+  # -- 확정 실패 (422) — 호출자는 즉시 markFailed --
+  NOT_PRODUCT_PAGE:       { disposition: permanent, bucket: not_product }
+  INVALID_URL:            { disposition: permanent, bucket: not_product }
+
+  EMPTY_SHELL:            { disposition: permanent, bucket: unreadable, escalatable: true }
+  NO_EXTRACTABLE_CONTENT: { disposition: permanent, bucket: unreadable }
+
+  FETCH_CLIENT_ERROR:     { disposition: permanent, bucket: blocked, escalatable: true }
+  PERMANENT_UPSTREAM:     { disposition: permanent, bucket: blocked, escalatable: true }
+
+  UNTRUSTWORTHY_VALUE:    { disposition: permanent, bucket: extract_quality }
+  LLM_INVALID_RESPONSE:   { disposition: permanent, bucket: extract_quality }
+  IMAGE_UNSUPPORTED:      { disposition: permanent, bucket: extract_quality }
+
+  # escalatable=false 는 BLOCKED_HOST 하나뿐이다 — 내부망에 헤드리스를 겨누는 것 자체가 SSRF 라
+  # "무조건 폴백" 정책의 유일한 예외다(recall 트레이드오프가 아니라 보안).
+  BLOCKED_HOST:           { disposition: permanent, bucket: internal_error, escalatable: false }
+  TOO_MANY_REDIRECTS:     { disposition: permanent, bucket: internal_error, escalatable: true }
+  MALFORMED_REDIRECT:     { disposition: permanent, bucket: internal_error, escalatable: true }
+
+  # -- 일시 실패 — 호출자는 PROCESSING 유지 후 recover 재시도 --
+  UPSTREAM_ERROR:         { disposition: transient, escalatable: true }
+  LLM_UPSTREAM:           { disposition: transient }
+  HEADLESS_BLOCKED:       { disposition: transient }
+  HEADLESS_UPSTREAM:      { disposition: transient }
+  STORAGE_ERROR:          { disposition: transient }
+
+  # -- 모델 프로브 전용 (POST /internal/models/probe) --
+  # 추출 경로가 아니라 백오피스 저장 게이트의 응답이라, 운영 분류(bucket) 축에 들어가지 않는다.
+  MODEL_NOT_FOUND:        { disposition: permanent, scope: probe }
+  MODEL_INCOMPATIBLE:     { disposition: permanent, scope: probe }

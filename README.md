@@ -36,15 +36,19 @@ server 가 풀세트, 나머지는 그 부분집합. 환경 차이의 대부분�
 ```
 infra/
   install.sh     # 개발 규약 자산 설치기 (정본) — 자산 목록·설치 위치·실패 처리를 여기만 안다.
-                 # 배포 갈래(blocks·contracts)는 설치 대상이 아니다 — 각 서비스 deploy 가 원격 fetch 로 소비
+                 # 배포 갈래(blocks)는 설치 대상이 아니다 — 각 서비스 deploy 가 원격 fetch 로 소비.
+                 # contracts 도 산문은 같지만, 기계가 읽는 code 카탈로그만 소비 repo 의
+                 # shared-infra/contracts 로 설치한다 (로컬 참조 편의 — CI 는 checkout 으로 직접 받는다)
   conventions/   # 규약 (이미 통일된 기준선 + 이 repo 자산의 작성 규칙)
     infra.md     # terraform state·컨테이너 배포단위·네트워크 격리 (등급 A)
     blocks.md    # 블록 작성 원칙 (실행위치 중립·값 미소유·종료코드·셀프검증)
     testing.md   # 테스트 컨벤션 원칙 (스택 무관 + JVM/Spring 공통) — install.sh 가 소비 repo 의
                  # .claude/rules/testing-principles.md 로 설치, 언어 바인딩은 각 repo 소유
-  contracts/     # 서비스 간 배포 계약 (판정 방식·규약)
+  contracts/     # 서비스 간 계약 (판정 방식·규약)
     health.md    # 헬스체크 계약 (첫 통일 대상)
     observability.md  # 관측 계약 (Alloy 수집·라벨·로그 형식)
+    extraction-api.md            # 추출 API 계약 (core -> extractor: 요청·응답 3갈래·code 의미·타임아웃 예산)
+    extraction-error-codes.yaml  # 추출 실패 code 카탈로그 (정본 데이터) — 소비 repo 메타 테스트가 읽어 대조
   blocks/        # 실행 위치 중립 공유 블록 (bash 스크립트 + 관측 설정)
     healthcheck.sh
     healthcheck.test.sh
