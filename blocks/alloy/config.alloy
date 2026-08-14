@@ -280,7 +280,12 @@ prometheus.exporter.unix "host" {
     // 업데이트마다 경로 번호가 바뀌어(/snap/snapd/26869 -> 27595 -> ...) 시계열이 계속 누적된다
     // (실측 13개 마운트 중 10개). 감시 대상은 / 와 /boot 뿐이다.
     mount_points_exclude = "^/(dev|proc|sys|run/credentials/.+|var/lib/docker/.+|host/.+|snap/.+)($|/)"
-    fs_types_exclude     = "^(autofs|binfmt_misc|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|squashfs|sysfs|tracefs)$"
+    // 이 값은 병합이 아니라 **대체**다 - 지정하는 순간 Alloy 기본 목록이 통째로 무효가 되므로, 기본값을
+    // 전부 옮겨 적은 뒤 우리 것(tmpfs)만 더해야 한다. /snap 이 그동안 수집되던 것도 이 함정 때문이었다:
+    // 기본값엔 squashfs 가 있는데 우리 목록에서 빠져 제외가 풀려 있었다. 기본값 정본은
+    // grafana/alloy v1.16.1 internal/static/integrations/node_exporter/config.go 의
+    // DefaultConfig.FilesystemFSTypesExclude - Alloy 를 올릴 때 이 목록도 대조한다.
+    fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
     mount_timeout        = "5s"
   }
 
