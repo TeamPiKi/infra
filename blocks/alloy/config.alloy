@@ -88,9 +88,13 @@ discovery.relabel "metrics" {
   }
 }
 
+// 수집 주기는 60s 다. Grafana Cloud 의 과금 단위(billable series)는 활성 시계열 x DPM(분당 샘플 수)이라
+// 30s 수집은 시계열을 하나도 안 늘리고도 청구량을 2배로 만든다 — 무료 한도(10k)를 넘긴 실제 원인이었다
+// (실측 active 5.8k 인데 billable 13.6k). 알림은 전부 로그 기반이고 대시보드는 추세 관찰이라 1분 해상도로
+// 충분하다. 부하테스트처럼 초 단위 스파이크를 봐야 할 때만 일시적으로 30s 로 되돌린다(재프로비저닝 몇 분).
 prometheus.scrape "containers" {
   targets         = discovery.relabel.metrics.output
-  scrape_interval = "30s"
+  scrape_interval = "60s"
   forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
 }
 
@@ -236,12 +240,52 @@ prometheus.exporter.unix "host" {
   sysfs_path  = "/host/sys"
   rootfs_path = "/host/root"
 
-  // 작은 박스라 불필요한 collector 는 끈다.
-  disable_collectors = ["ipvs", "btrfs", "infiniband", "xfs", "zfs"]
+  // 작은 박스라 불필요한 collector 는 끈다. 기본 41개 중 12개만 남긴다 — 나머지는 (a) EC2 에 물리적으로
+  // 없는 장치이거나(테이프·SAN·센서·전원), (b) 쓰지 않는 기능이거나(NFS·SELinux), (c) 커널 내부 통계라
+  // 우리 장애 유형(메모리·파싱·외부 API)과 무관하다. 실측으로 확인한 근거: node_scrape_collector_success 가
+  // 24h 내 실패로 찍힌 것이 tapestats(테이프 드라이브)·fibrechannel(SAN)·bonding·nfs·nfsd 였다 —
+  // 고장이 아니라 "해당 없음"이고, 이 노이즈가 진짜 수집 실패를 가린다.
+  //
+  // 끄면 그 collector 의 메트릭뿐 아니라 collector 당 2개씩 붙는 scrape_collector_success/duration 도 함께
+  // 사라진다(41 -> 12). 남은 collector 의 success 는 그대로라 "진짜 실패" 감시는 오히려 선명해진다.
+  //
+  // 남기는 것: cpu·meminfo·filesystem·diskstats·netdev·loadavg·stat·vmstat(swap 의존 박스라 필수)
+  //           ·pressure(메모리 압력)·filefd(fd 고갈은 실제 장애 원인)·uname(호스트 식별)
+  //           ·textfile(아래 블록 - DB 백업 지표가 이 경로로 들어온다. 끄면 백업 알림이 죽는다)
+  disable_collectors = [
+    // 기존 항목 (파일시스템·클러스터링 미사용)
+    "ipvs", "btrfs", "infiniband", "xfs", "zfs",
+    // 물리적으로 없는 장치 - 가상화된 EC2 라 존재할 수 없다
+    "tapestats", "fibrechannel", "bonding", "mdadm", "bcache", "nvme",
+    "hwmon", "thermal_zone", "powersupplyclass", "rapl", "edac", "cpufreq",
+    // 쓰지 않는 기능 - 스토리지는 EBS·S3 이고 Ubuntu 는 AppArmor 를 쓴다
+    "nfs", "nfsd", "selinux",
+    // 커널 네트워크 내부 통계 - 트래픽 자체는 netdev 가 낸다
+    "netclass", "netstat", "sockstat", "softnet", "udp_queues", "conntrack",
+    // 정적 메타이거나 진단에 쓰지 않는 것
+    "arp", "dmi", "os", "time", "timex", "schedstat", "entropy", "processes",
+  ]
+
+  // veth 는 컨테이너마다 생기고 배포마다 이름이 바뀌어(veth7730075 -> veth7a96d8f ...) 배포 한 번에
+  // 시계열 한 벌씩 영구히 쌓인다 - 한도를 밀어올린 누수의 절반이 이것이었다(실측 12개 인터페이스 중 9개가 veth).
+  // 컨테이너 트래픽은 어차피 docker0·주 NIC 를 통과하며 합산되므로 개별 veth 를 볼 이유도 없다.
+  // 주 NIC 이름(ens5·eth0 등)은 박스·AMI 마다 다를 수 있어 include 화이트리스트 대신 exclude 로 둔다 —
+  // 이름이 달라도 주 NIC 은 항상 남는다.
+  netdev {
+    device_exclude = "^(veth.*|docker0|br-.+|lo)$"
+  }
 
   filesystem {
-    mount_points_exclude = "^/(dev|proc|sys|run/credentials/.+|var/lib/docker/.+|host/.+)($|/)"
-    fs_types_exclude     = "^(autofs|binfmt_misc|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|securityfs|sysfs|tracefs)$"
+    // /snap/* 은 snapd 가 마운트하는 읽기 전용 스냅샷 이미지다. 용량이 고정이라 감시 가치가 없는데,
+    // 업데이트마다 경로 번호가 바뀌어(/snap/snapd/26869 -> 27595 -> ...) 시계열이 계속 누적된다
+    // (실측 13개 마운트 중 10개). 감시 대상은 / 와 /boot 뿐이다.
+    mount_points_exclude = "^/(dev|proc|sys|run/credentials/.+|var/lib/docker/.+|host/.+|snap/.+)($|/)"
+    // 이 값은 병합이 아니라 **대체**다 - 지정하는 순간 Alloy 기본 목록이 통째로 무효가 되므로, 기본값을
+    // 전부 옮겨 적은 뒤 우리 것(tmpfs)만 더해야 한다. /snap 이 그동안 수집되던 것도 이 함정 때문이었다:
+    // 기본값엔 squashfs 가 있는데 우리 목록에서 빠져 제외가 풀려 있었다. 기본값 정본은
+    // grafana/alloy v1.16.1 internal/static/integrations/node_exporter/config.go 의
+    // DefaultConfig.FilesystemFSTypesExclude - Alloy 를 올릴 때 이 목록도 대조한다.
+    fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
     mount_timeout        = "5s"
   }
 
@@ -263,7 +307,8 @@ prometheus.exporter.unix "host" {
 prometheus.scrape "host" {
   targets         = prometheus.exporter.unix.host.targets
   forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
-  scrape_interval = "30s"
+  // 앱 메트릭과 같은 이유로 60s (위 prometheus.scrape "containers" 주석 참고).
+  scrape_interval = "60s"
 }
 
 // ── 트레이스: 앱 OTLP push → Grafana Cloud (Tempo) ──
