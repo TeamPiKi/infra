@@ -30,7 +30,7 @@ else
   get() { gh api -H "Accept: application/vnd.github.raw" "repos/$INFRA_REPO/contents/$1" 2>/dev/null; }
 fi
 
-# $1=자산 경로(repo 내) $2=설치 대상(절대경로) $3=권한 mode $4=검증 유형(sh|md)
+# $1=자산 경로(repo 내) $2=설치 대상(절대경로) $3=권한 mode $4=검증 유형(sh|md|yaml)
 # 빈 응답(fetch 실패·권한 없음)이면 어느 유형이든 스킵해 기존 설치본을 유지한다 (가용성 가드).
 # 그 위에 유형별 검증을 얹는다 (validate_asset).
 install_asset() {
@@ -53,11 +53,15 @@ install_asset() {
 #       훅을 깨뜨리지 않게 설치를 스킵하고 기존 설치본을 유지한다.
 #   md: 셸이 아니라 bash -n 이 오히려 실패하므로 적용하지 않는다. 비어있지 않음([ -s ])만 보며,
 #       그건 install_asset 이 이미 확인했다.
+#   yaml: yaml 파서를 전제할 수 없어(python·yq 가 없는 환경이 있다) 문법 검증 대신 최상위 키만 본다.
+#       빈 응답은 install_asset 이 이미 거르므로, 여기가 막는 건 "받긴 받았는데 그 카탈로그가 아닌 것"
+#       (에러 페이지·잘린 본문)이다. 이 검사가 파서 없이 오탐 없는 유일한 층이다.
 validate_asset() {
   case "$2" in
-    sh) bash -n "$1" 2>/dev/null ;;
-    md) true ;;
-    *)  false ;;   # 알 수 없는 유형은 설치하지 않는다 (안전)
+    sh)   bash -n "$1" 2>/dev/null ;;
+    md)   true ;;
+    yaml) grep -q '^codes:' "$1" ;;
+    *)    false ;;   # 알 수 없는 유형은 설치하지 않는다 (안전)
   esac
 }
 
@@ -78,7 +82,7 @@ is_managed_path() {
     "$HOME/.claude/hooks/"*|"$HOME/.claude/scripts/"*|"$HOME/.claude/commands/"*) return 0 ;;
   esac
   [ -n "${repo_root:-}" ] && case "$1" in
-    "$repo_root/.claude/commands/"*|"$repo_root/.claude/rules/"*) return 0 ;;
+    "$repo_root/.claude/commands/"*|"$repo_root/.claude/rules/"*|"$repo_root/shared-infra/"*) return 0 ;;
   esac
   [ -n "${hooks_dir:-}" ] && case "$1" in
     "$hooks_dir/"*) return 0 ;;
@@ -223,6 +227,26 @@ if [ "$self" = 0 ]; then
   rules_dir="$repo_root/.claude/rules"
   mkdir -p "$rules_dir"
   install_asset conventions/testing.md "$rules_dir/testing-principles.md" 444 md
+fi
+
+# 계약 카탈로그 — 소비 repo 의 shared-infra/contracts 에 설치한다.
+#
+# 이 설치는 로컬 세션 참조용 편의이지 CI 강제의 근거가 아니다. install.sh 는 SessionStart 훅이라
+# CI 에서 돌지 않는다. 소비 repo 의 메타 테스트를 실제로 강제하는 건 그 repo 워크플로의
+# actions/checkout(이 repo -> shared-infra/)이다.
+#
+# 그럼에도 경로를 shared-infra/contracts 로 맞추는 이유: 로컬과 CI 의 카탈로그 위치가 같아야
+# 소비 repo 의 테스트가 경로를 하나만 알면 된다. 경로가 갈리면 테스트에 분기가 생기고, 그 분기가
+# 로컬에서만 초록불인 사각을 만든다.
+#
+# 다른 계약 문서(health·observability)는 사람이 읽는 산문이라 설치 대상이 아니다. 카탈로그만 여기
+# 오는 건 그것만 기계가 읽는 데이터이기 때문이다. self 모드(infra 자신)는 정본이 이미 손에 있어 제외한다.
+# 버전 영역에 사본이 생기므로, 소비 repo 는 이 배선을 받을 때 .gitignore 에 shared-infra/ 를 더한다
+# (CI 의 checkout 도 같은 자리에 풀리므로 그쪽 노이즈까지 함께 덮인다).
+if [ "$self" = 0 ]; then
+  contracts_dir="$repo_root/shared-infra/contracts"
+  mkdir -p "$contracts_dir"
+  install_asset contracts/extraction-error-codes.yaml "$contracts_dir/extraction-error-codes.yaml" 444 yaml
 fi
 
 # 세션 훅·유틸 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이다.
