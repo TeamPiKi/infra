@@ -46,3 +46,6 @@ jobs:
 
       - name: Run slot_switch.sh self-test
         run: ./blocks/slot_switch.test.sh
+
+      - name: Run provision-alloy-ssm.sh self-test
+        run: ./blocks/alloy/provision-alloy-ssm.test.sh

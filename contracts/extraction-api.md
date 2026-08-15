@@ -225,6 +225,7 @@ link 와 같은 `UNTRUSTWORTHY_VALUE` 를 재사용한다.
 | 대상 몰 fetch (link) | connect 5s / read 15s | |
 | 헤드리스 render (link) | connect 2s / read 20s | 실측 전형 1.6-5.5s(프록시 포함) 대비 약 4배 여유. headless-first 최악(connect 2 + render 20 + LLM 30 = 약 52s)이 호출자 read 55s 안에 들도록 상한 |
 | Gemini | read 30s | link LLM fallback·image OCR 동일 |
+| Gemini 무료 티어 시도 | read 10s | 무료 키가 설정된 경우에만 선행하는 시도. 유료와 같은 상한을 주면 두 호출이 직렬로 쌓여 image 합계가 호출자 read 를 크게 넘는다. 무료의 주 실패(429·503)는 1초 안에 오므로 짧게 잡아도 잃는 것이 적다 |
 | Extractor 내부 합계 (image) | 약 40s | S3 download + Gemini OCR 30s + crop + 결과 upload. S3 는 동일 리전이라 수 초 |
 
 **안쪽 예산은 항상 바깥보다 작아야 한다.** link 와 image 가 호출자 read 55s 를 공유하므로, 어느 경로든
@@ -238,6 +239,15 @@ fetch 단독의 이론 최악이 이미 약 88s 다(헤드리스 이전부터 �
 recover 가 재시도한다. 그 사이 Extractor 가 계속 돌아 중복 발주가 겹쳐도 Extractor 는 무상태라
 안전하고(0장), attempt 상한 2 가 총비용을 바운드한다. 이 스택을 55s 안에 구겨 넣으려면 render 예산이
 실측 대비 무의미하게 얇아져(5s 이하) recall 을 잃는다 — 의도된 트레이드오프다.
+
+**Gemini 무료 티어 폴백도 같은 성격의 초과를 만든다.** 무료 키가 설정되면 LLM 단이 최악
+(connect 5 + read 10) + (connect 5 + read 30) = 50s 가 되어 image 합계가 약 60s 로 호출자 read 55s 를
+넘을 수 있다. 다만 이 최악은 무료가 10s 를 꽉 채워 무응답이고 **동시에** 유료가 30s 를 꽉 채워야
+성립하며, 무료의 실제 실패는 대개 즉시 오는 429·503 이라 실측상 도달하지 않는다. 넘치면 위와 같이
+호출자 read 타임아웃 -> 일시 실패 -> recover 재시도로 흡수되고 attempt 상한 2 가 총비용을 바운드한다.
+
+무료 시도는 **비용이 아니라 지연만 늘린다** — 무료가 성공하면 과금이 없고, 실패하면 유료 1회로
+무료 도입 전과 같다. 무료 키를 비우면 이 단이 통째로 사라져 표의 나머지가 그대로 성립한다.
 
 ## 5. 진화 규칙
 
