@@ -7,8 +7,9 @@
 
 - **박스마다 Alloy 하나** — 수집기는 박스를 따라간다. 크로스박스 scrape 로 남의 박스를 긁지
   않고, 각 박스의 Alloy 가 자기 박스의 컨테이너·호스트만 수집한다.
-- **config·기동 블록의 SSOT 는 이 repo** — `blocks/alloy/config.alloy`(컴포넌트 그래프)와
-  `blocks/alloy/provision-alloy.sh`(기동 블록). 블록은 값을 담지 않는다.
+- **config·기동 블록의 SSOT 는 이 repo** — `blocks/alloy/config.alloy`(컴포넌트 그래프),
+  `blocks/alloy/provision-alloy.sh`(기동 블록), `blocks/alloy/provision-alloy-ssm.sh`(SSM 자격
+  로드 + 위 호출). 블록은 값을 담지 않는다 — 박스 값(`--box`·`--environment`)은 호출부가 준다.
 - **값(자격증명·환경)은 호출부/SSM 주입** — 아래 env 로 주입한다. secret 미등록 박스는
   provision-alloy.sh 가 기동을 skip 한다(빈 endpoint 로 부팅해 crash loop 하지 않는다).
 
@@ -98,7 +99,9 @@ Alloy receiver 는 `0.0.0.0:4318`/`4317` 로 bind 해 호스트 게이트웨이�
 
 **GRAFANA_* 값의 정본은 SSM 공유 경로 `/piki/observability/grafana-*` 하나다** (SecureString,
 kebab-case: `grafana-metrics-url` 등 7건). 세 서비스 박스의 프로비저닝이 전부 이 경로를 읽는다 —
-core 는 `provision-runtime.sh`, extractor·renderer 는 각자의 `provision-observability.sh`.
+읽는 방법 자체도 공용 블록 `provision-alloy-ssm.sh` 로 통일되어, 경로·실패 정책이 바뀌면 한 곳만
+고치면 된다(그 전에는 core `provision-runtime.sh` 4절과 extractor·renderer 의
+`provision-observability.sh` 에 같은 로직이 세 벌 복제돼 있었다).
 각 박스 인스턴스 롤이 이 경로의 `ssm:GetParameter` 를 갖는다 (각 repo terraform).
 GH secrets·서비스별 SSM 사본은 폐기됐다 (TeamPiKi/core#771).
 
