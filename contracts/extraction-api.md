@@ -86,10 +86,16 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
 - `method`: 값을 만든 추출 경로. `STRUCTURED`(구조화 파싱, 결정론적) | `LLM`(Gemini — URL fallback·image
   경로). 호출자가 snapshot 출처(SERVER/SERVER_LLM)를 구분 저장하는 근거다. tolerant reader 라 모르는
   값이 와도 무시하고 출처 미기록으로 둔다.
-- **`name`(non-blank)·`imageUrl`·`currentPrice` 의 non-null 을 Extractor 가 보장한다** — core 의 READY
-  불변식(name·price·imageUrl·extractedAt, extractedAt 은 호출자가 전이 시점에 채움)과 동일 조건이다.
-  보장할 수 없으면 성공이 아니라 422(`UNTRUSTWORTHY_VALUE`)다. `currency` 는 READY 필수가 아니라
-  **nullable** 이다. 호출자의 엔티티 불변식은 최후 보루로 유지된다.
+- **값 필드는 전부 nullable 이고, Extractor 는 "하나라도 채웠다" 만 보장한다.** `name`(non-blank)·
+  `imageUrl`·`currentPrice` 중 **하나도 못 채웠을 때만** 422(`UNTRUSTWORTHY_VALUE`)이고, 일부만 채운
+  결과는 채운 값 그대로 200 이다. `currency` 는 단독으로 "채웠다" 의 근거가 되지 못한다(READY 필수가
+  아니라서다).
+- 세 필드는 여전히 core 의 READY 불변식(name·price·imageUrl·extractedAt, extractedAt 은 호출자가 전이
+  시점에 채움)과 같은 집합이지만, **그 집합을 채우는 책임이 Extractor 단독에서 "Extractor 가 채운 만큼 +
+  사용자가 나머지" 로 갈렸다.** 호출자는 부분값을 `INCOMPLETE` 상태로 받아 사용자 입력으로 완성한다
+  (TeamPiKi/core#944). 사진에 가격이 박혀 있지 않은 것은 정상 입력이라, 셋을 다 요구하면 "쇼핑몰 화면
+  캡처" 만 통과하는 계약이 되기 때문이다.
+- 호출자의 엔티티 불변식은 최후 보루로 유지된다 — READY 로 전이하는 값은 여전히 세 필드를 다 요구한다.
 
 확정 실패 422:
 
@@ -117,9 +123,16 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
   있기 때문이다. 대체 규칙(404 만 기본 모델로)도 link 와 같다.
 
 성공 200 은 link 경로와 **동일한 필드 모양**이다(`finalUrl` 만 null). Extractor 가
-`download(bucket,key) -> OCR 추출 -> bbox 크롭(불가 시 원본) -> upload(bucket, items/{uuid}.png)` 를
-다 하고, 업로드한 결과 이미지의 public URL 을 `imageUrl` 로 돌려준다. imageUrl 은 항상 non-null(크롭
-실패해도 원본을 올린다). non-null 규약은 link 와 같다.
+`download(bucket,key) -> OCR 추출 -> bbox 크롭(불가 시 원본) -> upload(bucket, items/{uuid}.{ext})` 를
+다 하고, 업로드한 결과 이미지의 public URL 을 `imageUrl` 로 돌려준다.
+
+- **`imageUrl` 은 이 경로에서 항상 non-null 이다** — 업로드 결과라 크롭에 실패해도 원본이 올라간다.
+  따라서 이미지 경로가 값 0개로 422 가 되는 일은 사실상 없고, 이름·가격을 못 뽑으면 그 둘만 빈 200 이다.
+- **업로드 확장자·content-type 은 결과물을 따른다.** 크롭이 실제로 일어났으면 `png`/`image/png` 이고,
+  크롭 불가 포맷(HEIC·WebP·HEIF 는 자바 ImageIO 에 디코더가 없다)이라 원본을 그대로 올리면 **원본의
+  확장자·content-type** 을 쓴다. 예전에는 둘 다 png 로 고정해 HEIC 바이트가 png 로 위장 저장됐고,
+  브라우저 대부분이 그 파일을 렌더링하지 못했다(TeamPiKi/extractor#35).
+- 그 밖의 값 필드 규약은 link 와 같다(하나라도 채우면 200, 하나도 못 채우면 422).
 
 이 경로에만 나오는 code: `IMAGE_UNSUPPORTED`(확정), `STORAGE_ERROR`(일시). 이미지에서 상품 식별 실패는
 link 와 같은 `UNTRUSTWORTHY_VALUE` 를 재사용한다.
@@ -172,7 +185,7 @@ link 와 같은 `UNTRUSTWORTHY_VALUE` 를 재사용한다.
 | `NO_EXTRACTABLE_CONTENT` | 본문에 가시 텍스트도 데이터 script 도 없어 LLM 을 부르지 않고 확정(빈 셸 환각 차단). plain 경로는 EMPTY_SHELL 재분류가 선행하므로 사실상 헤드리스 렌더 결과까지 셸일 때 나온다 |
 | `FETCH_CLIENT_ERROR` | 대상 4xx (403 차단·404·429 등). 봇 방어의 클로킹일 수 있다 |
 | `PERMANENT_UPSTREAM` | 대상 500/501 등 결정론적 재실패 5xx. 대형 몰은 상시 가용이라 대개 진짜 장애가 아니라 봇 방어다 |
-| `UNTRUSTWORTHY_VALUE` | 추출값이 범위·상식 위반이거나 non-null 보장을 못 채웠다 |
+| `UNTRUSTWORTHY_VALUE` | 추출값이 범위·상식 위반이거나, 값을 하나도 못 채웠다(일부만 채운 결과는 실패가 아니라 200) |
 | `LLM_INVALID_RESPONSE` | 재시도해도 같은 LLM 실패(4xx·파싱 불가·정책 거부로 text part 없음) |
 | `IMAGE_UNSUPPORTED` | 이미지 경로 전용 — 빈 이미지·미지원 MIME |
 | `BLOCKED_HOST` | 사설·메타데이터·loopback 으로 resolve 되는 host 를 SSRF 로 차단. 헤드리스 에스컬레이션 절대 금지 대상 |
