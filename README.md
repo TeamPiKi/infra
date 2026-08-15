@@ -54,7 +54,7 @@ infra/
     healthcheck.test.sh
     run_container.sh
     run_container.test.sh
-    alloy/       # 관측 수집기(Alloy) 공통 블록 (config.alloy·provision-alloy.sh)
+    alloy/       # 관측 수집기(Alloy) 공통 블록 (config.alloy·provision-alloy.sh·provision-alloy-ssm.sh)
   hooks/         # git hooks 정본 (commit-msg) — install.sh 가 각 repo 로 설치
   skills/        # 스킬 정본 — install.sh 가 설치한다. repo 워크플로(commit·coderabbit·pr·issue·session-check·session-close)는
                  # 각 repo(infra 자신 포함)의 .claude/commands 로, 세션 관리(retitle·find-session)는 repo 무관이라 ~/.claude/commands 로 간다
