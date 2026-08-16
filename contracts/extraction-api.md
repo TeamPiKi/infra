@@ -18,10 +18,12 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
   (중복의 대가는 LLM 비용 한 번뿐). Extractor 에 상태를 넣고 싶어지면 설계 경고 신호다.
 - 재시도·내구성·상태 전이는 전부 호출자(core 의 `item_snapshots` 작업 큐)의 책임이다. Extractor 는
   "단건 시도 1회"에만 답한다.
-- 에스컬레이션(plain fetch -> 헤드리스 브라우저)은 Extractor 내부 관심사다. 응답 계약에 드러나지 않는다 —
-  호출자는 어떤 fetch 전략이 쓰였는지 모른다. 단 "어느 플랫폼을 처음부터 헤드리스로 보낼지"의 **정책**은
-  호출자(DB·백오피스)가 주인이라, 요청 필드 `headlessFirst` 로 힌트만 받는다(2장) — 무상태 불변식을
-  지키는 선에서의 유일한 정책 수용 지점이다.
+- 에스컬레이션(plain fetch -> 헤드리스 브라우저)은 Extractor 내부 관심사다. 응답 계약에 드러나지 않고
+  호출자는 어떤 fetch 전략이 쓰였는지 모른다. **브라우저를 여는 것 자체에는 허락이 필요 없다** — 우리는
+  신원을 UA 로 밝히고 우리 IP 로 가며, 막히면 막힌 대로 보고한다.
+- 단 "이 대상이 플랫폼의 명시적 허락을 받았는가"의 **판정**은 호출자(DB·백오피스)가 주인이라, 요청 필드
+  `authorized` 로 받는다(2장) — 무상태 불변식을 지키는 선에서의 유일한 정책 수용 지점이다. 이 값이 여는
+  것은 렌더 서비스의 우회 수단(지문 보정·프록시)뿐이고, Extractor 는 판단 없이 전달만 한다.
 
 ## 1. 응답 3갈래 (전이 규약)
 
@@ -45,16 +47,17 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
 요청:
 
 ```json
-{ "url": "https://www.musinsa.com/products/12345", "headlessFirst": false, "model": "gemini-3.1-flash-lite" }
+{ "url": "https://www.musinsa.com/products/12345", "authorized": false, "model": "gemini-3.1-flash-lite" }
 ```
 
 - `url` (필수): https 스킴의 상품 페이지 URL. 형식·스킴·미지원 플랫폼의 동기 검증은 호출자(core 등록
   경계)가 이미 끝냈다는 전제이나, Extractor 도 자기 경계에서 방어 검증한다(다층 방어).
-- `headlessFirst` (선택, 기본 false): 호출자의 플랫폼 라우팅 정책(`HEADLESS_FIRST`, DB·백오피스 동적
-  설정) 힌트. true 면 plain(정적 fetch)을 건너뛰고 처음부터 헤드리스 브라우저로 추출한다. 정책의 단일
-  진실은 호출자 DB 에 있고 무상태인 Extractor 는 요청 단위로만 받는다. Extractor 의
-  `product.extract.headless.enabled` 가 꺼져 있으면 무시된다(스위치가 힌트보다 우선).
-- `model` (선택): 이 요청의 LLM 추출에 쓸 모델. headlessFirst 와 같은 성질이다 — 정책의 단일 진실은
+- `authorized` (선택, 기본 false): 이 대상이 플랫폼의 명시적 허락을 받았는가. 판정의 단일 진실은 호출자
+  DB(백오피스)에 있고 무상태인 Extractor 는 요청 단위로만 받아 렌더 서비스까지 전달한다. **추출 경로는 이
+  값과 무관하게 같다** — 정적 fetch 로 시작해 필요하면 브라우저로 승격하는 흐름은 항상 동일하다. 이 값이
+  true 일 때 열리는 것은 렌더 서비스의 우회 수단(지문 보정·프록시)뿐이다. 생략·null 은 false(허락 없음)로
+  정규화되는 fail-safe 라, 이 필드를 모르는 구버전 호출자의 요청은 안전한 쪽으로만 어긋난다.
+- `model` (선택): 이 요청의 LLM 추출에 쓸 모델. authorized 와 같은 성질이다 — 정책의 단일 진실은
   호출자 DB(백오피스)에 있고 Extractor 는 요청 단위로만 받는다. **요청 단위로 받는 이유**: Extractor
   박스 한 대를 여러 환경이 공유하므로, 모델을 Extractor 환경변수로 잡으면 dev 에서 바꾼 것이 prod
   파싱까지 덮는다. 생략·null·빈 문자열이면 Extractor 의 기본 모델을 쓴다 — 구버전 호출자의 요청이
