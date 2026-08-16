@@ -169,7 +169,7 @@ retire_assets() {
   done
 }
 
-# 세션 훅(UserPromptSubmit)을 사용자 settings.json 에 등록한다. 이 설치기가 **사용자 개인 설정을 고치는 유일한 지점**이라
+# 홈 훅을 사용자 settings.json 에 등록한다. 이 설치기가 **사용자 개인 설정을 고치는 유일한 지점**이라
 # 가장 보수적으로 다룬다.
 #   - 멱등: 같은 command 가 이미 있으면 아무것도 하지 않는다 (중복 등록 방지).
 #   - 비파괴: 기존 항목을 지우거나 고치지 않는다. Orca 등 다른 훅과 그대로 공존한다.
@@ -177,6 +177,13 @@ retire_assets() {
 #     매번 지우지 않아도 되게 하는 탈출구다 (파일만 지우면 설치기가 되살리지 않는다).
 #   - 실패 안전: jq 가 없거나, 설정 파일이 없거나, JSON 이 깨져 있으면 손대지 않는다. 결과가
 #     유효한 JSON 일 때만 원자적으로 교체하고, 원본 권한을 보존한다.
+#
+# 등록하는 훅 둘:
+#   session-title-emit — UserPromptSubmit. matcher 가 없는 이벤트라 그룹 하나로 붙인다.
+#   ensure-assets      — PostToolUse(EnterWorktree)·PreToolUse(Bash). 이 둘은 **툴 이름 matcher** 가
+#                        필요해 ensure_matched 를 따로 둔다. 한 스크립트를 두 이벤트에 거는 이유는
+#                        스크립트 주석 참고: 위치가 바뀌는 순간(EnterWorktree)과 그것을 놓쳤을 때의
+#                        안전망(테스트 실행 직전)이 서로를 덮는다.
 register_session_hooks() {
   local settings="$1" tmp mode
   [ -f "$HOME/.claude/.no-session-hooks" ] && return 0
@@ -185,13 +192,22 @@ register_session_hooks() {
   jq -e . "$settings" >/dev/null 2>&1 || return 0
 
   tmp=$(mktemp)
-  if jq --arg emit "$HOME/.claude/hooks/session-title-emit.sh" '
+  if jq --arg emit "$HOME/.claude/hooks/session-title-emit.sh" \
+        --arg assets "$HOME/.claude/hooks/ensure-assets.sh" '
         def ensure($event; $cmd):
           if [.hooks[$event][]?.hooks[]?.command] | index($cmd) then .
           else .hooks[$event] = ((.hooks[$event] // []) + [{hooks: [{type: "command", command: $cmd, timeout: 10}]}])
           end;
+        # matcher 가 있는 이벤트용. 중복 판정을 **같은 matcher 그룹 안**으로 한정한다 — 이벤트 전체에서
+        # 찾으면 한 이벤트에 matcher 를 하나 더 붙이는 변경이 "이미 있다"로 오인돼 조용히 누락된다.
+        def ensure_matched($event; $matcher; $cmd):
+          if [.hooks[$event][]? | select(.matcher == $matcher) | .hooks[]?.command] | index($cmd) then .
+          else .hooks[$event] = ((.hooks[$event] // []) + [{matcher: $matcher, hooks: [{type: "command", command: $cmd, timeout: 20}]}])
+          end;
         .hooks = (.hooks // {})
         | ensure("UserPromptSubmit"; $emit)
+        | ensure_matched("PostToolUse"; "EnterWorktree"; $assets)
+        | ensure_matched("PreToolUse"; "Bash"; $assets)
      ' "$settings" >"$tmp" 2>/dev/null && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
     mode=$(stat -f '%Lp' "$settings" 2>/dev/null || stat -c '%a' "$settings" 2>/dev/null || echo 644)
     install -m "$mode" "$tmp" "$settings"
@@ -263,6 +279,10 @@ if [ -d "$claude_dir" ]; then
   install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    555 sh
   install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 555 sh
   install_asset claude/scripts/find-session.sh        "$claude_dir/scripts/find-session.sh"        555 sh
+  # 자산 자가치유 — 이 설치기의 사각(세션 시작 시점의 repo 한 곳에만 깔린다)을 스스로 메운다.
+  # repo 가 아니라 홈에 두는 이유: 소비 repo 의 settings 에 두면 그 repo 와 그 워크트리만 커버해
+  # "core 세션에서 extractor·renderer 를 만지는" 경로를 못 잡는다.
+  install_asset claude/hooks/ensure-assets.sh         "$claude_dir/hooks/ensure-assets.sh"         555 sh
 
   # 세션 스킬은 repo 스킬(commit·pr·issue…)과 달리 **전역**으로 설치한다. 세션 관리는 repo 를
   # 건드리지 않는 일이라 piki repo 밖(다른 repo·빈 디렉토리)에서도 필요하고, 전역에 두면 소비 repo
