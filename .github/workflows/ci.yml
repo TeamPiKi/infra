@@ -49,3 +49,6 @@ jobs:
 
       - name: Run provision-alloy-ssm.sh self-test
         run: ./blocks/alloy/provision-alloy-ssm.test.sh
+
+      - name: Run workspace-init.sh self-test
+        run: ./workspace/workspace-init.test.sh

@@ -30,6 +30,29 @@ else
   get() { gh api -H "Accept: application/vnd.github.raw" "repos/$INFRA_REPO/contents/$1" 2>/dev/null; }
 fi
 
+# 워크스페이스 루트(로비)인지 판별한다 — 소비 repo 와 다르게 다뤄야 한다.
+#
+# 루트는 소비 repo 여럿을 자식으로 두고 **세션을 시작하는 자리**일 뿐, 그 자체엔 코드가 없다.
+# 그래서 스킬은 필요하지만 JVM 규약·계약 카탈로그는 필요 없다 (import 할 CLAUDE.md 의 대상도,
+# 카탈로그를 읽는 테스트도 거기엔 없다).
+#
+# 판별을 "origin 이 없음" 으로 하지 않는 이유: 아직 remote 를 안 붙인 소비 repo 와 구분되지 않는다.
+# 대신 **자식으로 판별한다** — toplevel 바로 밑에 origin 이 TeamPiKi/* 인 repo 가 하나라도 있으면
+# 로비다. 자식 repo 가 없는 평범한 repo 는 여기 걸릴 수 없다.
+#
+# 자식에게 순회 설치하지는 않는다. repo 매니페스트는 --git-common-dir 기준이라 repo 마다 따로인데
+# 한 번의 실행이 여러 repo 에 깔면 기록은 마지막 것만 남고, 다음 실행이 나머지를 은퇴 자산으로
+# 오인해 지운다. 자식은 각자의 SessionStart 와 ensure-assets 가 덮는다.
+workspace=0
+if [ "$self" = 0 ] && [ -n "${repo_root:-}" ]; then
+  for child in "$repo_root"/*/; do
+    [ -e "${child}.git" ] || continue
+    case "$(git -C "$child" remote get-url origin 2>/dev/null)" in
+      *TeamPiKi/*) workspace=1; break ;;
+    esac
+  done
+fi
+
 # $1=자산 경로(repo 내) $2=설치 대상(절대경로) $3=권한 mode $4=검증 유형(sh|md|yaml)
 # 빈 응답(fetch 실패·권한 없음)이면 어느 유형이든 스킵해 기존 설치본을 유지한다 (가용성 가드).
 # 그 위에 유형별 검증을 얹는다 (validate_asset).
@@ -239,10 +262,22 @@ install_asset skills/session-close.md "$cmd_dir/session-close.md" 444 md
 # 스킬(행동 절차)과 달리 이건 판단 기준이라 에이전트 컨텍스트에 상주해야 효력이 있다.
 # 언어·스택 바인딩은 각 repo 가 자기 문서에 소유하고, 여기서는 공통 원칙만 내려보낸다.
 # 스킬과 달리 infra 자신은 제외한다 — import 할 CLAUDE.md 가 없고, JVM·Spring 원칙이라 대상도 아니다.
-if [ "$self" = 0 ]; then
+# 워크스페이스 루트도 같은 이유로 제외한다 (코드가 없는 로비라 이 원칙의 대상이 아니다).
+if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   rules_dir="$repo_root/.claude/rules"
   mkdir -p "$rules_dir"
   install_asset conventions/testing.md "$rules_dir/testing-principles.md" 444 md
+fi
+
+# 로비 규칙 — 워크스페이스 루트에만 설치한다.
+#
+# 루트 세션은 "먼저 워크트리로 들어간 다음 작업한다" 는 규칙 위에서만 안전한데, 그 규칙은 판단
+# 기준이라 스킬(절차)이 아니라 규약 문서로 컨텍스트에 상주해야 효력이 있다. 루트 CLAUDE.md 가
+# 이 파일을 import 한다 (workspace/init.sh 가 그 한 줄을 만든다).
+if [ "$workspace" = 1 ]; then
+  rules_dir="$repo_root/.claude/rules"
+  mkdir -p "$rules_dir"
+  install_asset workspace/piki-workspace.md "$rules_dir/piki-workspace.md" 444 md
 fi
 
 # 계약 카탈로그 — 소비 repo 의 shared-infra/contracts 에 설치한다.
@@ -259,7 +294,8 @@ fi
 # 오는 건 그것만 기계가 읽는 데이터이기 때문이다. self 모드(infra 자신)는 정본이 이미 손에 있어 제외한다.
 # 버전 영역에 사본이 생기므로, 소비 repo 는 이 배선을 받을 때 .gitignore 에 shared-infra/ 를 더한다
 # (CI 의 checkout 도 같은 자리에 풀리므로 그쪽 노이즈까지 함께 덮인다).
-if [ "$self" = 0 ]; then
+# 워크스페이스 루트는 제외한다 — 카탈로그를 읽는 테스트가 자식 repo 에 있지 루트엔 없다.
+if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   contracts_dir="$repo_root/shared-infra/contracts"
   mkdir -p "$contracts_dir"
   install_asset contracts/extraction-error-codes.yaml "$contracts_dir/extraction-error-codes.yaml" 444 yaml
@@ -279,6 +315,10 @@ if [ -d "$claude_dir" ]; then
   install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    555 sh
   install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 555 sh
   install_asset claude/scripts/find-session.sh        "$claude_dir/scripts/find-session.sh"        555 sh
+  # 로비 열거 — 워크스페이스 루트 세션의 스킬(`/pr` 0-A)이 자식 repo 를 가로질러 후보를 모을 때 쓴다.
+  # repo 가 아니라 홈에 두는 이유는 find-session 과 같다: 루트는 물론 어느 repo 에서 불러도 같은
+  # 한 벌이어야 하고, 루트에 두면 자식 repo 세션에서는 못 쓴다.
+  install_asset claude/scripts/piki-worktrees.sh      "$claude_dir/scripts/piki-worktrees.sh"      555 sh
   # 자산 자가치유 — 이 설치기의 사각(세션 시작 시점의 repo 한 곳에만 깔린다)을 스스로 메운다.
   # repo 가 아니라 홈에 두는 이유: 소비 repo 의 settings 에 두면 그 repo 와 그 워크트리만 커버해
   # "core 세션에서 extractor·renderer 를 만지는" 경로를 못 잡는다.
