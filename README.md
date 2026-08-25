@@ -62,8 +62,6 @@ infra/
     hooks/       # 세션 훅 (session-title-emit·session-title-compute) — 제목을 대화 맥락으로 갱신
     scripts/     # 세션 유틸 (find-session·piki-worktrees)
   workspace/     # 워크스페이스 루트(로비) 자산 — 여러 repo 를 한 폴더에 두고 거기서 세션을 시작하는 구성
-    workspace-init.sh       # 팀원 1회 부트스트랩 (루트 git init·.gitignore·settings.json·CLAUDE.md·repo clone)
-    workspace-init.test.sh  # 위 스크립트 셀프 테스트 (오프라인 모드로 CI 에서도 돈다)
     piki-workspace.md       # 로비 규칙·repo 지도 — install.sh 가 루트 .claude/rules 로 설치
   .github/workflows/  # CI (정본) — shellcheck·블록 셀프테스트
     ci.yml

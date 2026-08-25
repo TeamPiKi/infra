@@ -272,8 +272,11 @@ fi
 # 로비 규칙 — 워크스페이스 루트에만 설치한다.
 #
 # 루트 세션은 "먼저 워크트리로 들어간 다음 작업한다" 는 규칙 위에서만 안전한데, 그 규칙은 판단
-# 기준이라 스킬(절차)이 아니라 규약 문서로 컨텍스트에 상주해야 효력이 있다. 루트 CLAUDE.md 가
-# 이 파일을 import 한다 (workspace/init.sh 가 그 한 줄을 만든다).
+# 기준이라 스킬(절차)이 아니라 규약 문서로 컨텍스트에 상주해야 효력이 있다.
+#
+# 다만 설치만으로는 로드되지 않는다 - 규약 문서는 루트 CLAUDE.md 가 `@.claude/rules/piki-workspace.md`
+# 로 import 해야 컨텍스트에 올라온다(실측). 그 한 줄은 **지금은 사람이 직접 넣는다**. 셋업 스크립트가
+# 대신 넣어 주는 것은 infra#58 로 분리했다.
 if [ "$workspace" = 1 ]; then
   rules_dir="$repo_root/.claude/rules"
   mkdir -p "$rules_dir"
