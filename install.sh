@@ -30,6 +30,18 @@ else
   get() { gh api -H "Accept: application/vnd.github.raw" "repos/$INFRA_REPO/contents/$1" 2>/dev/null; }
 fi
 
+# 워크스페이스 루트(소비 repo 여럿을 자식으로 두는 자리)면 repo 전용 자산의 대상이 아니다. 코드가 없다.
+# "origin 이 없음" 이 아니라 자식으로 판별하는 이유: remote 를 아직 안 붙인 소비 repo 와 구분되지 않는다.
+workspace=0
+if [ "$self" = 0 ] && [ -n "${repo_root:-}" ]; then
+  for child in "$repo_root"/*/; do
+    [ -e "${child}.git" ] || continue
+    case "$(git -C "$child" remote get-url origin 2>/dev/null)" in
+      *TeamPiKi/*) workspace=1; break ;;
+    esac
+  done
+fi
+
 # $1=자산 경로(repo 내) $2=설치 대상(절대경로) $3=권한 mode $4=검증 유형(sh|md|yaml)
 # 빈 응답(fetch 실패·권한 없음)이면 어느 유형이든 스킵해 기존 설치본을 유지한다 (가용성 가드).
 # 그 위에 유형별 검증을 얹는다 (validate_asset).
@@ -239,7 +251,8 @@ install_asset skills/session-close.md "$cmd_dir/session-close.md" 444 md
 # 스킬(행동 절차)과 달리 이건 판단 기준이라 에이전트 컨텍스트에 상주해야 효력이 있다.
 # 언어·스택 바인딩은 각 repo 가 자기 문서에 소유하고, 여기서는 공통 원칙만 내려보낸다.
 # 스킬과 달리 infra 자신은 제외한다 — import 할 CLAUDE.md 가 없고, JVM·Spring 원칙이라 대상도 아니다.
-if [ "$self" = 0 ]; then
+# 워크스페이스 루트도 같은 이유로 제외한다 (import 할 CLAUDE.md 도, 이 원칙을 적용할 코드도 없다).
+if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   rules_dir="$repo_root/.claude/rules"
   mkdir -p "$rules_dir"
   install_asset conventions/testing.md "$rules_dir/testing-principles.md" 444 md
@@ -259,7 +272,8 @@ fi
 # 오는 건 그것만 기계가 읽는 데이터이기 때문이다. self 모드(infra 자신)는 정본이 이미 손에 있어 제외한다.
 # 버전 영역에 사본이 생기므로, 소비 repo 는 이 배선을 받을 때 .gitignore 에 shared-infra/ 를 더한다
 # (CI 의 checkout 도 같은 자리에 풀리므로 그쪽 노이즈까지 함께 덮인다).
-if [ "$self" = 0 ]; then
+# 워크스페이스 루트도 제외한다. 카탈로그를 읽는 테스트는 자식 repo 에 있지 루트엔 없다.
+if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   contracts_dir="$repo_root/shared-infra/contracts"
   mkdir -p "$contracts_dir"
   install_asset contracts/extraction-error-codes.yaml "$contracts_dir/extraction-error-codes.yaml" 444 yaml
