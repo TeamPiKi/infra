@@ -222,6 +222,7 @@ if [ -d "$claude_dir" ]; then
   install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    555 sh
   install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 555 sh
   install_asset claude/scripts/find-session.sh        "$claude_dir/scripts/find-session.sh"        555 sh
+  install_asset claude/scripts/piki-worktrees.sh      "$claude_dir/scripts/piki-worktrees.sh"      555 sh
   # 자가치유. 이 설치기는 세션 시작 시점의 repo 한 곳에만 깔리므로, 세션 도중 다른 repo 를 만지는
   # 경로를 이 훅이 메운다. 소비 repo 의 settings 에 두면 그 repo 만 커버해서 홈에 둔다.
   install_asset claude/hooks/ensure-assets.sh         "$claude_dir/hooks/ensure-assets.sh"         555 sh
