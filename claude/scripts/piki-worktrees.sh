@@ -1,7 +1,6 @@
 #!/bin/bash
 #
 # 워크스페이스 루트(로비)에서 자식 repo 를 가로질러 작업 후보 워크트리를 열거한다.
-# `git worktree list` 는 repo 하나만 보므로, 어느 repo 에도 서 있지 않은 로비 세션은 이걸 거쳐야 후보를 안다.
 #
 # 사용: piki-worktrees.sh [워크스페이스_루트]        (기본값: cwd 의 git toplevel)
 # 출력: repo <TAB> path <TAB> branch <TAB> open|free  (후보가 없으면 빈 출력)
@@ -12,7 +11,7 @@ set -uo pipefail
 root=${1:-$(git rev-parse --show-toplevel 2> /dev/null)}
 [ -d "$root" ] || exit 0
 
-# 레지스트리에는 죽은 세션의 파일도 남는다. pid 생존까지 봐야 멀쩡한 후보를 "열림" 으로 가리지 않는다.
+# 레지스트리에 죽은 세션의 파일도 남는다.
 live_cwds=$'\n'
 for f in "$HOME"/.claude/sessions/*.json; do
     [ -f "$f" ] || continue
@@ -30,15 +29,15 @@ for child in "$root"/*/; do
         *) continue ;;
     esac
 
-    # 형제 폴더 워크트리(piki/extractor-fetch-bound)도 자식으로 잡히므로 같은 repo 를 두 번 세지 않게 막는다.
+    # 형제 폴더 워크트리(piki/extractor-fetch-bound)도 자식으로 잡혀 같은 repo 가 두 번 걸린다.
     common=$(git -C "$child" rev-parse --path-format=absolute --git-common-dir 2> /dev/null) || continue
     case "$seen" in *"|$common|"*) continue ;; esac
     seen="$seen|$common|"
 
-    # repo 이름은 common dir 의 부모에서 얻는다. $child 가 형제 폴더 워크트리면 그 basename 은 작업 이름이다.
+    # $child 가 형제 폴더 워크트리면 그 basename 은 repo 가 아니라 작업 이름이다.
     repo=$(basename "$(dirname "$common")")
 
-    # 열거는 즉답해야 해서 `gh repo view` 없이 로컬 ref 로만 base 를 근사한다 (`/pr` 0-B 와 같은 우선순위).
+    # `/pr` 0-B 와 같은 우선순위지만 `gh repo view` 는 안 쓴다 - 열거는 네트워크 없이 즉답해야 한다.
     if git -C "$child" rev-parse --verify -q origin/dev > /dev/null 2>&1; then
         base=dev
     else
@@ -48,7 +47,6 @@ for child in "$root"/*/; do
     fi
 
     # 첫 레코드인 메인 체크아웃은 제외한다 - 로비에서 `EnterWorktree path=` 로 진입할 수 없다.
-    # detached 는 branch 줄이 없어 자연히 빠진다 (올릴 브랜치가 없다).
     git -C "$child" worktree list --porcelain | awk -v RS='' -v repo="$repo" -v base="$base" '
         NR == 1 { next }
         {
