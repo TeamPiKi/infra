@@ -97,7 +97,15 @@ gh pr view --json url,number,body,baseRefName 2>/dev/null
 
 **로컬 git 비교는 항상 `origin/$BASE` 기준이다.** `$BASE`(브랜치 이름)는 `gh pr create --base $BASE` 같은 GitHub 쪽 지정에만 그대로 쓰고, `git log`·`git diff`·Start date 계산 등 로컬 비교는 전부 `origin/$BASE` 를 쓴다 — 로컬 `dev` 는 stale 일 수 있어 그걸 기준 삼으면 머지로 끌려온 남의 커밋이 diff 에 부풀려 섞인다 (0-A 의 fetch 가 `origin/$BASE` 최신을 보장).
 
-**임시파일 경로 규칙 (동시 세션 격리)** — PR 본문 임시파일은 고정 `/tmp/pr_body.md` 가 아니라 **브랜치별 경로** `/tmp/pr_body_$SLUG.md` 를 쓴다 (`SLUG` = 브랜치명의 `/` 를 `_` 로 치환, 예: `chore/skill-tmp` → `/tmp/pr_body_chore_skill-tmp.md`). 워크트리는 브랜치당 하나라(스택 금지) 브랜치별 경로면 두 워크트리 세션이 동시에 `/pr` 을 돌려도 본문 파일이 안 겹친다 — 고정 경로일 때 한 세션이 다른 세션의 본문을 덮어쓰던 race 를 막는다. 아래 3-A·3-B 의 본문 파일 경로는 모두 이 규칙을 따른다. **셸 변수는 bash 호출 간 유지되지 않으므로, 본문 파일을 다루는 각 bash 블록은 `SLUG=$(git branch --show-current | tr '/' '_')` 를 자기 안에서 다시 구한다. 같은 이유로 `$BASE`·`$ISSUE_LABELS` 처럼 앞 블록에서 결정된 값도 뒤 블록에서 변수 참조로 기대지 않는다 — 결정 시점에 echo 로 남긴 실제 값을 뒤 블록에 인라인으로 박는다.** (Write 도구로 본문을 저장할 때도 같은 경로를 쓴다 — Claude 가 현재 브랜치명으로 슬러그를 박는다.)
+**임시파일 경로 규칙 (동시 세션 격리)** — PR 본문 임시파일은 고정 `/tmp/pr_body.md` 가 아니라 **repo + 브랜치별 경로** `/tmp/pr_body_$SLUG.md` 를 쓴다 (`SLUG` = `<repo>_<브랜치명의 / 를 _ 로 치환>`, 예: core 의 `chore/skill-tmp` → `/tmp/pr_body_core_chore_skill-tmp.md`). 워크트리는 브랜치당 하나라(스택 금지) 이 경로면 두 세션이 동시에 `/pr` 을 돌려도 본문 파일이 안 겹친다 — 고정 경로일 때 한 세션이 다른 세션의 본문을 덮어쓰던 race 를 막는다. **repo 이름을 앞에 두는 이유**: 워크스페이스 루트 세션은 여러 repo 를 오가는데, repo 가 달라도 브랜치명은 겹칠 수 있어(`fix/42-...`) 브랜치명만으로는 격리가 깨진다. 아래 3-A·3-B 의 본문 파일 경로는 모두 이 규칙을 따른다. **셸 변수는 bash 호출 간 유지되지 않으므로, 본문 파일을 다루는 각 bash 블록은 아래 한 줄을 자기 안에서 다시 구한다.**
+
+```bash
+SLUG=$(basename "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")_$(git branch --show-current | tr '/' '_')
+```
+
+repo 이름을 `--show-toplevel` 이 아니라 **`--git-common-dir` 의 부모**에서 얻는 이유: 워크트리에서는 toplevel 이 워크트리 폴더(`core/.claude/worktrees/foo`)라 basename 이 repo 가 아니라 작업 이름이 된다. common dir 은 워크트리에서도 항상 `<repo>/.git` 을 가리킨다.
+
+**블록 간에 유지되지 않는 값은 `$SLUG` 만이 아니다.** `$BASE`·`$ISSUE_LABELS` 처럼 앞 블록에서 결정된 값도 뒤 블록에서 변수 참조로 기대지 않는다 — 결정 시점에 echo 로 남긴 실제 값을 뒤 블록에 인라인으로 박는다. (Write 도구로 본문을 저장할 때도 같은 경로를 쓴다 — Claude 가 현재 repo·브랜치명으로 슬러그를 박는다.)
 
 ### 1단계: 정보 수집
 
@@ -211,10 +219,10 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
 ### 3-A. Create 모드 — PR 신규 생성
 
 1. 원격에 푸시되지 않았으면 `git push -u origin {브랜치명}`
-2. PR 제목과 본문 초안을 작성해 **`/tmp/pr_body_$SLUG.md` 에 저장(Write)**한다 (경로 규칙은 0단계 참조 — Claude 가 현재 브랜치 슬러그를 박는다). 이어서 본문 파일 링크를 채팅에 남겨 확인받는다 (위 "본문 확인 — 마크다운 링크로 보여주기"). 제목은 채팅에 한 줄로 함께 보인다.
+2. PR 제목과 본문 초안을 작성해 **`/tmp/pr_body_$SLUG.md` 에 저장(Write)**한다 (경로 규칙은 0단계 참조 — Claude 가 현재 repo·브랜치 슬러그를 박는다). 이어서 본문 파일 링크를 채팅에 남겨 확인받는다 (위 "본문 확인 — 마크다운 링크로 보여주기"). 제목은 채팅에 한 줄로 함께 보인다.
 3. 확인 후 PR 생성 — assignee / 라벨을 함께 부여한다:
    ```bash
-   SLUG=$(git branch --show-current | tr '/' '_')
+   SLUG=$(basename "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")_$(git branch --show-current | tr '/' '_')
    ISSUE_LABELS="{1단계 echo 로 확인한 값. '없음'이면 빈 값}"   # 셸 변수는 블록 간 미유지 — SLUG 처럼 블록 안에서 확정한다 ($BASE 는 0-A echo 의 BASE_GUESS)
    # 라벨 플래그는 배열로 — `${VAR:+--label "$VAR"}` 관용구는 zsh 가 unquoted 확장을
    # word split 하지 않아 "--label chore" 한 단어가 되어 unknown flag 로 터진다 (bash/zsh 양쪽 안전형).
@@ -262,9 +270,9 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
 
 ### 3-B. Update 모드 — 기존 PR 본문 갱신
 
-1. 기존 본문 가져오기 (브랜치별 경로 — 0단계 규칙):
+1. 기존 본문 가져오기 (repo·브랜치별 경로 — 0단계 규칙):
    ```bash
-   SLUG=$(git branch --show-current | tr '/' '_')
+   SLUG=$(basename "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")_$(git branch --show-current | tr '/' '_')
    gh pr view --json body --jq '.body' > /tmp/pr_body_$SLUG.md
    ```
 2. **이번 추가 변경 내역을 `git log` 로 정확히 식별한다 — 기억·추측에 의존하지 않는다.**
@@ -283,7 +291,7 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
    - 이유: 스쿼시 머지 후 blame 으로 오는 독자가 "초판 + 정오표"를 머릿속에서 리플레이하지 않고 본문만 읽으면 되게 한다. 본문이 늘 최종이므로 머지 시점의 별도 통합(fold) 단계도 필요 없다 — 언제 어디서 머지되든 본문은 이미 완결 서사다.
 4. **제목 변경 필요 검토**: 추가 변경으로 작업 의도/스코프가 바뀌었거나 기존 제목에 오타·부정확한 표현이 있으면 새 제목 제안. 그 외엔 제목 유지.
 5. 갱신본(최신화된 본문)을 `/tmp/pr_body_$SLUG.md` 에 저장(Write)한 뒤 본문 파일 링크를 채팅에 남겨 확인받는다 (위 "본문 확인 — 마크다운 링크로 보여주기"). 새 제목이 있으면 채팅에 제목·변경 이유를 함께 짚는다.
-6. 확인 후 `gh pr edit --body-file /tmp/pr_body_$SLUG.md` 로 갱신 (1번과 같은 브랜치 경로 — 별도 bash 호출이라 `SLUG=$(git branch --show-current | tr '/' '_')` 를 다시 구한다). 제목 변경이 있으면 `--title "새 제목"` 추가.
+6. 확인 후 `gh pr edit --body-file /tmp/pr_body_$SLUG.md` 로 갱신 (1번과 같은 경로 — 별도 bash 호출이라 `SLUG=$(basename "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")_$(git branch --show-current | tr '/' '_')` 를 다시 구한다). 제목 변경이 있으면 `--title "새 제목"` 추가.
 7. **CodeRabbit 리뷰 대응** — 이번 변경이 CodeRabbit 리뷰 대응이라면 commit + push 로 끝내지 않는다. CodeRabbit 리뷰(인라인 thread + review body nitpick) 조회·평가·reply·resolve 는 **`/coderabbit` 스킬**로 처리한다. 그 스킬이 author 매칭(GraphQL `reviewThreads` 는 `coderabbitai`, REST `reviews` 는 `coderabbitai[bot]` 이라 `coderabbitai` 로 시작하는지로 판별), nitpick 조회, accept/reject reply·resolve 정책을 담는다. (사람 리뷰 thread 는 작성자가 직접 답하므로 `/coderabbit` 도 건드리지 않는다.)
 
 8. **메타데이터 보정** — 이전 버전 스킬로 만든 PR 은 assignee / 라벨 / Project / Start date 가 비어 있을 수 있다. update 모드에서도 멱등하게 보정한다 (이미 설정돼 있으면 no-op). `item-add` 는 이미 등록된 PR 이면 기존 item id 를 그대로 반환한다.
