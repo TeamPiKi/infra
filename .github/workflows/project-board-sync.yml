@@ -1,0 +1,357 @@
+# 프로젝트 보드 동기화 정본 — 소비 repo(core·extractor·renderer·client·infra 자신)가 얇은 caller 로
+# 호출한다 (uses: TeamPiKi/infra/.github/workflows/project-board-sync.yml@main + secrets: inherit).
+# @main 참조는 허거덩(discord-pr-bot)과 같은 SSOT 선택 — 이 파일 머지 즉시 전 소비 repo 에 반영된다.
+#
+# 이 본문은 core 의 워크플로 3개(issue-project-sync·pr-issue-sync·pr-merge-project-sync)의 이식이다.
+# 조직 보드(PiKi 일정관리, projectV2 number 1)가 사실상 core 전용이 된 원인이 이 장치들의 core 편재였다.
+# core 하드코딩 한 곳을 일반화했다: 머지 PR 의 보드 반영 조건 base.ref == 'dev' 를
+# base.ref == default branch 비교로 바꿔, default 가 dev 인 repo(core·client)와 main 인
+# repo(extractor·infra·renderer)가 같은 정본을 쓴다.
+#
+# org-level Projects v2 는 default GITHUB_TOKEN 으로 접근 불가 — 각 repo secret 의 PROJECT_TOKEN
+# (classic PAT: project + repo 스코프. private repo 를 보드에 넣으려면 repo 필수) 을 쓴다.
+# PROJECT_TOKEN 미설정 repo 에서는 각 job 이 경고 후 성공 종료(skip) — caller 가 시크릿보다 먼저
+# 머지돼도 CI 가 빨갛게 되지 않는다. fork PR 은 secrets 가 비어 같은 경로로 skip 된다.
+# 이슈 작성자 자동 할당만은 repo 안 작업이라 GITHUB_TOKEN 으로 돈다 (caller 가 issues:write 전달).
+name: Project Board Sync
+
+# workflow_call 이 정본 계약이고, issues·pull_request 직접 트리거는 infra 자신의 caller 겸용이다 —
+# 소비 repo 와 달리 infra 는 정본과 같은 repo 라 얇은 caller 파일을 따로 두지 않는다.
+on:
+  workflow_call:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened, closed]
+
+jobs:
+  # 이슈 오픈 → 보드 등록 + 이슈 본문의 시작일/마감일/우선순위를 보드 필드로.
+  # 날짜·우선순위 섹션(### 시작일 등)이 없는 본문이면 보드 등록만 하고 필드는 건드리지 않는다.
+  issue-to-board:
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions: {}
+    steps:
+      - name: Add to Project & Set Dates
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::PROJECT_TOKEN 미설정 — 보드 동기화를 건너뜁니다 (repo secret 에 PROJECT_TOKEN 등록 필요)."
+            exit 0
+          fi
+
+          # 프로젝트 ID 조회
+          PROJECT_ID=$(gh api graphql -f query='{
+            organization(login: "${{ github.repository_owner }}") {
+              projectV2(number: 1) { id }
+            }
+          }' --jq '.data.organization.projectV2.id')
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+            echo "::error::Project 동기화 중단: PROJECT_ID 조회 실패 — 프로젝트 접근 권한(PROJECT_TOKEN)과 보드 번호를 확인하세요."
+            exit 1
+          fi
+
+          # 이슈를 프로젝트에 추가하고 item ID 획득
+          ITEM_ID=$(gh api graphql \
+            -f query='mutation($pid:ID!,$cid:ID!) {
+              addProjectV2ItemById(input:{projectId:$pid,contentId:$cid}) {
+                item { id }
+              }
+            }' \
+            -f pid="$PROJECT_ID" \
+            -f cid="$ISSUE_NODE_ID" \
+            --jq '.data.addProjectV2ItemById.item.id')
+
+          echo "Added to project. Item ID: $ITEM_ID"
+
+          # 프로젝트 필드 ID 조회 (날짜, 우선순위)
+          FIELDS=$(gh api graphql -f query='{
+            organization(login: "${{ github.repository_owner }}") {
+              projectV2(number: 1) {
+                fields(first: 30) {
+                  nodes {
+                    ... on ProjectV2Field { id name dataType }
+                    ... on ProjectV2SingleSelectField { id name options { id name } }
+                  }
+                }
+              }
+            }
+          }' --jq '.data.organization.projectV2.fields.nodes')
+
+          START_FIELD=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Start date" and .dataType == "DATE") | .id')
+          DUE_FIELD=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Target date" and .dataType == "DATE") | .id')
+          PRIORITY_FIELD_ID=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Priority") | .id')
+          echo "START_FIELD=$START_FIELD DUE_FIELD=$DUE_FIELD PRIORITY_FIELD_ID=$PRIORITY_FIELD_ID"
+          if [ -z "$START_FIELD" ] || [ -z "$DUE_FIELD" ] || [ -z "$PRIORITY_FIELD_ID" ]; then
+            echo "::error::Project 동기화 중단: 필드 ID 조회 실패 (Start date / Target date / Priority) — 보드 필드 구성을 확인하세요."
+            exit 1
+          fi
+
+          # 이슈 본문에서 날짜 파싱 (MMDD → YYYY-MM-DD 자동 변환, YYYY-MM-DD / YYYYMMDD도 허용)
+          CURRENT_YEAR=$(date +%Y)
+          normalize_date() {
+            local raw
+            raw=$(echo "$1" | grep -A3 "^### $2" | grep -E "^[0-9]+" | head -1 | tr -d '[:space:]')
+            if [[ "$raw" =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})$ ]]; then
+              echo "$raw"
+            elif [[ "$raw" =~ ^([0-9]{4})([0-9]{2})([0-9]{2})$ ]]; then
+              echo "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
+            elif [[ "$raw" =~ ^([0-9]{2})([0-9]{2})$ ]]; then
+              echo "${CURRENT_YEAR}-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+            fi
+          }
+          START_DATE=$(normalize_date "$ISSUE_BODY" "시작일")
+          DUE_DATE=$(normalize_date "$ISSUE_BODY" "마감일")
+          echo "START_DATE=$START_DATE DUE_DATE=$DUE_DATE"
+
+          # 우선순위 파싱
+          PRIORITY_LABEL=$(echo "$ISSUE_BODY" | grep -A3 "^### 우선순위" | grep -vE "^###|^$" | head -1 | tr -d '[:space:]')
+          PRIORITY_OPTION_ID=$(echo "$FIELDS" | jq -r --arg p "$PRIORITY_LABEL" '.[] | select(.name == "Priority") | .options[]? | select(.name == $p) | .id')
+          echo "PRIORITY=$PRIORITY_LABEL PRIORITY_OPTION_ID=$PRIORITY_OPTION_ID"
+
+          update_field() {
+            local fid=$1 val_key=$2 val=$3
+            [[ -z "$fid" || -z "$val" ]] && return
+            gh api graphql \
+              -f query="mutation(\$pid:ID!,\$iid:ID!,\$fid:ID!,\$val:$4!) {
+                updateProjectV2ItemFieldValue(input:{projectId:\$pid,itemId:\$iid,fieldId:\$fid,value:{$val_key:\$val}}) {
+                  projectV2Item { id }
+                }
+              }" \
+              -f pid="$PROJECT_ID" -f iid="$ITEM_ID" -f fid="$fid" -f val="$val"
+          }
+
+          update_field "$START_FIELD"        "date"                   "$START_DATE"          "Date"
+          update_field "$DUE_FIELD"          "date"                   "$DUE_DATE"            "Date"
+          update_field "$PRIORITY_FIELD_ID"  "singleSelectOptionId"   "$PRIORITY_OPTION_ID"  "String"
+
+          # bash -e 환경에서 `[[ ]] && echo` 는 조건이 false 일 때 exit 1 을 유발하므로 if/fi 사용
+          if [[ -n "$START_DATE" ]];        then echo "Start date set: $START_DATE"; fi
+          if [[ -n "$DUE_DATE" ]];          then echo "Due date set: $DUE_DATE"; fi
+          if [[ -n "$PRIORITY_OPTION_ID" ]]; then echo "Priority set: $PRIORITY_LABEL"; fi
+
+  # 이슈 오픈 → assignee 비어 있으면 작성자를 할당. 보드가 아닌 repo 안 작업이라 GITHUB_TOKEN 으로 충분.
+  issue-auto-assign:
+    if: github.event_name == 'issues' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      issues: write
+    steps:
+      - name: Auto-assign creator if no assignee
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ASSIGNEES: ${{ toJson(github.event.issue.assignees) }}
+          CREATOR: ${{ github.event.issue.user.login }}
+        run: |
+          if echo "$ASSIGNEES" | jq -e 'length == 0' > /dev/null; then
+            gh issue edit "$ISSUE_NUMBER" \
+              --add-assignee "$CREATOR" \
+              --repo ${{ github.repository }}
+            echo "Auto-assigned to creator: $CREATOR"
+          fi
+
+  # PR 오픈/머지 → 본문 close 참조(같은 repo 의 #N)가 가리키는 이슈의 보드 Status 를
+  # In review / Done 으로 전이. 머지 아닌 close 는 건드리지 않는다.
+  pr-linked-issue-status:
+    if: github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'closed')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions: {}
+    steps:
+      - name: Update Linked Issue Status in Project
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_MERGED: ${{ github.event.pull_request.merged }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::PROJECT_TOKEN 미설정 — 보드 동기화를 건너뜁니다 (repo secret 에 PROJECT_TOKEN 등록 필요)."
+            exit 0
+          fi
+
+          # PR 본문에서 연결된 이슈 번호 파싱 (Closes #X, Fixes #X 등)
+          ISSUE_NUMS=$(echo "$PR_BODY" | grep -ioE "(close[sd]?|fix(e[sd])?|resolve[sd]?)\s*#[0-9]+" | grep -oE "[0-9]+" || true)
+
+          if [[ -z "$ISSUE_NUMS" ]]; then
+            echo "No linked issues found"
+            exit 0
+          fi
+
+          # 상태 결정
+          if [[ "${{ github.event.action }}" == "opened" ]]; then
+            TARGET_STATUS="In review"
+          elif [[ "$PR_MERGED" == "true" ]]; then
+            TARGET_STATUS="Done"
+          else
+            echo "PR closed without merge, skipping"
+            exit 0
+          fi
+
+          # 프로젝트 ID 및 Status 필드 조회
+          PROJECT_ID=$(gh api graphql -f query='{
+            organization(login: "${{ github.repository_owner }}") {
+              projectV2(number: 1) { id }
+            }
+          }' --jq '.data.organization.projectV2.id')
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+            echo "::error::Project 동기화 중단: PROJECT_ID 조회 실패 — 프로젝트 접근 권한(PROJECT_TOKEN)과 보드 번호를 확인하세요."
+            exit 1
+          fi
+
+          STATUS_FIELD=$(gh api graphql -f query='{
+            organization(login: "${{ github.repository_owner }}") {
+              projectV2(number: 1) {
+                fields(first: 30) {
+                  nodes {
+                    ... on ProjectV2SingleSelectField {
+                      id name options { id name }
+                    }
+                  }
+                }
+              }
+            }
+          }' --jq '.data.organization.projectV2.fields.nodes[] | select(.name == "Status")')
+
+          FIELD_ID=$(echo "$STATUS_FIELD" | jq -r '.id')
+          OPTION_ID=$(echo "$STATUS_FIELD" | jq -r --arg s "$TARGET_STATUS" '.options[] | select(.name == $s) | .id')
+
+          if [ -z "$FIELD_ID" ] || [ "$FIELD_ID" = "null" ]; then
+            echo "::error::Project 동기화 중단: Status 필드 ID 조회 실패 — 보드 필드 구성을 확인하세요."
+            exit 1
+          fi
+          if [[ -z "$OPTION_ID" ]]; then
+            echo "::error::Project 동기화 중단: Status 옵션 '$TARGET_STATUS' 을 보드에서 찾지 못했습니다. 보드에 옵션을 추가하세요."
+            exit 1
+          fi
+
+          for ISSUE_NUM in $ISSUE_NUMS; do
+            # 이슈에 연결된 ProjectV2 item 중 대상 프로젝트(ID 일치)만 선택
+            ITEM_ID=$(gh api graphql \
+              -f query='query($owner:String!,$repo:String!,$num:Int!){
+                repository(owner:$owner,name:$repo){
+                  issue(number:$num){
+                    projectItems(first:20){ nodes { id project { id } } }
+                  }
+                }
+              }' \
+              -F owner=${{ github.repository_owner }} -F repo=${{ github.event.repository.name }} -F num="$ISSUE_NUM" \
+              --jq ".data.repository.issue.projectItems.nodes[] | select(.project.id == \"$PROJECT_ID\") | .id")
+
+            if [[ -n "$ITEM_ID" ]]; then
+              gh api graphql \
+                -f query='mutation($pid:ID!,$iid:ID!,$fid:ID!,$oid:String!) {
+                  updateProjectV2ItemFieldValue(input:{projectId:$pid,itemId:$iid,fieldId:$fid,value:{singleSelectOptionId:$oid}}) {
+                    projectV2Item { id }
+                  }
+                }' \
+                -f pid="$PROJECT_ID" -f iid="$ITEM_ID" -f fid="$FIELD_ID" -f oid="$OPTION_ID"
+
+              echo "Issue #$ISSUE_NUM → $TARGET_STATUS"
+            fi
+          done
+
+  # default branch 로 머지된 PR → 보드 등록 + Target date(KST 머지일) + Status Done.
+  # core 정본의 base.ref == 'dev' 하드코딩을 default branch 비교로 일반화한 자리다.
+  # fork PR 은 secrets 접근 불가라 head.repo 조건으로 걸러 skip.
+  pr-merged-to-board:
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions: {}
+    steps:
+      - name: Set Target date + Status Done on merged PR
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PR_NODE_ID: ${{ github.event.pull_request.node_id }}
+          MERGED_AT: ${{ github.event.pull_request.merged_at }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::PROJECT_TOKEN 미설정 — 보드 동기화를 건너뜁니다 (repo secret 에 PROJECT_TOKEN 등록 필요)."
+            exit 0
+          fi
+
+          # 머지 날짜 (YYYY-MM-DD, KST 기준)
+          # mergedAt 은 GitHub API 가 UTC 로 주는데(예: 2026-05-22T16:40:46Z),
+          # 단순 cut 으로 T 앞만 떼면 timezone 정보가 사라져 UTC 의 5/22 가 저장된다.
+          # KST(+9) 로는 5/23 새벽인데 보드의 Start date(KST 기준 첫 commit 일) 와 어긋나
+          # timeline 이 역행하는 사고가 있었음 (core #195/#196). TZ 명시로 강제 변환한다.
+          MERGE_DATE=$(TZ=Asia/Seoul date -d "$MERGED_AT" '+%Y-%m-%d')
+          echo "Merge date (KST): $MERGE_DATE"
+
+          # 프로젝트 + 필드 메타 동적 조회 (보드 변경에 자동 추종).
+          PROJECT_ID=$(gh api graphql -f query='{
+            organization(login: "${{ github.repository_owner }}") {
+              projectV2(number: 1) { id }
+            }
+          }' --jq '.data.organization.projectV2.id')
+          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
+            echo "::error::Project 동기화 중단: PROJECT_ID 조회 실패 — 프로젝트 접근 권한(PROJECT_TOKEN)과 보드 번호를 확인하세요."
+            exit 1
+          fi
+
+          FIELDS=$(gh api graphql -f query='{
+            organization(login: "${{ github.repository_owner }}") {
+              projectV2(number: 1) {
+                fields(first: 30) {
+                  nodes {
+                    ... on ProjectV2Field { id name dataType }
+                    ... on ProjectV2SingleSelectField { id name options { id name } }
+                  }
+                }
+              }
+            }
+          }' --jq '.data.organization.projectV2.fields.nodes')
+
+          TARGET_FIELD=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Target date" and .dataType == "DATE") | .id')
+          STATUS_FIELD=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Status") | .id')
+          DONE_OPTION=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Status") | .options[] | select(.name == "Done") | .id')
+          echo "TARGET_FIELD=$TARGET_FIELD STATUS_FIELD=$STATUS_FIELD DONE_OPTION=$DONE_OPTION"
+          if [ -z "$TARGET_FIELD" ] || [ -z "$STATUS_FIELD" ] || [ -z "$DONE_OPTION" ]; then
+            echo "::error::Project 동기화 중단: 필드/옵션 ID 조회 실패 (Target date / Status / Done) — 보드 필드 구성을 확인하세요."
+            exit 1
+          fi
+
+          # PR 을 프로젝트에 추가 — 이미 있으면 기존 item id 리턴 (addProjectV2ItemById 의 멱등성).
+          ITEM_ID=$(gh api graphql \
+            -f query='mutation($pid:ID!,$cid:ID!) {
+              addProjectV2ItemById(input:{projectId:$pid,contentId:$cid}) {
+                item { id }
+              }
+            }' \
+            -f pid="$PROJECT_ID" \
+            -f cid="$PR_NODE_ID" \
+            --jq '.data.addProjectV2ItemById.item.id')
+          echo "Item ID: $ITEM_ID"
+
+          # Target date = mergedAt
+          gh api graphql \
+            -f query='mutation($pid:ID!,$iid:ID!,$fid:ID!,$date:Date!) {
+              updateProjectV2ItemFieldValue(input:{
+                projectId:$pid, itemId:$iid, fieldId:$fid, value:{date:$date}
+              }) { projectV2Item { id } }
+            }' \
+            -f pid="$PROJECT_ID" -f iid="$ITEM_ID" -f fid="$TARGET_FIELD" -f date="$MERGE_DATE"
+
+          # Status → Done
+          gh api graphql \
+            -f query='mutation($pid:ID!,$iid:ID!,$fid:ID!,$oid:String!) {
+              updateProjectV2ItemFieldValue(input:{
+                projectId:$pid, itemId:$iid, fieldId:$fid, value:{singleSelectOptionId:$oid}
+              }) { projectV2Item { id } }
+            }' \
+            -f pid="$PROJECT_ID" -f iid="$ITEM_ID" -f fid="$STATUS_FIELD" -f oid="$DONE_OPTION"
+
+          echo "Synced: Target date=$MERGE_DATE, Status=Done"
