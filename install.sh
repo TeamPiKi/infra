@@ -205,6 +205,14 @@ if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   install_asset conventions/testing.md "$rules_dir/testing-principles.md" 444 md
 fi
 
+# 루트 CLAUDE.md 가 `@.claude/rules/piki-workspace.md` 로 import 해야 로드된다(실측).
+# 그 한 줄은 지금은 사람이 넣고 자동화는 infra#58.
+if [ "$workspace" = 1 ]; then
+  workspace_rules_dir="$repo_root/.claude/rules"
+  mkdir -p "$workspace_rules_dir"
+  install_asset workspace/piki-workspace.md "$workspace_rules_dir/piki-workspace.md" 444 md
+fi
+
 # 계약 카탈로그. 이 설치는 로컬 참조용 편의일 뿐 CI 강제 근거가 아니다(CI 에선 워크플로의 checkout 이
 # 같은 자리에 푼다). 경로를 맞추는 이유가 그것이다: 소비 repo 의 테스트가 경로를 하나만 알면 된다.
 # 정본이 이미 손에 있는 infra 자신과, 카탈로그를 읽는 테스트가 없는 워크스페이스 루트는 제외한다.
