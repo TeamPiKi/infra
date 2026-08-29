@@ -235,9 +235,9 @@ link 와 같은 `UNTRUSTWORTHY_VALUE` 를 재사용한다.
 Extractor 내부 값을 늘릴 땐 이 표를 갱신하고 core 쪽 read 타임아웃과 함께 재검증한다.
 
 예외적으로 **에스컬레이션 경로(plain 실패 -> headless)의 최악 스택**은 호출자 read 55s 를 넘을 수 있다.
-plain fetch 는 수동 redirect 추적(hop 상한 3 = 요청 최대 4회)마다 connect/read 타임아웃이 **새로 적용**되므로
-fetch 단독의 이론 최악이 이미 약 88s 다(헤드리스 이전부터 있던 특성). 여기에 render 22s + LLM 30s 가
-얹히면 이론 최악 약 140s — 단, 각 단이 전부 타임아웃까지 끄는 경우는 실측상 없다시피 하고(차단은 대개
+plain fetch 는 수동 redirect 추적(hop 상한 5 = 요청 최대 6회)마다 connect/read 타임아웃이 **새로 적용**되므로
+fetch 단독의 이론 최악이 이미 약 120s 다(요청당 connect 5s + read 15s, 헤드리스 이전부터 있던 특성).
+여기에 render 22s + LLM 30s 가 얹히면 이론 최악 약 172s — 단, 각 단이 전부 타임아웃까지 끄는 경우는 실측상 없다시피 하고(차단은 대개
 즉시 4xx/5xx 로 떨어져 fetch 가 빨리 실패한다), 넘치면 호출자는 read 타임아웃 -> 일시 실패로 처리해
 recover 가 재시도한다. 그 사이 Extractor 가 계속 돌아 중복 발주가 겹쳐도 Extractor 는 무상태라
 안전하고(0장), attempt 상한 2 가 총비용을 바운드한다. 이 스택을 55s 안에 구겨 넣으려면 render 예산이
