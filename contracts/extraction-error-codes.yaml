@@ -42,8 +42,13 @@ codes:
   LLM_INVALID_RESPONSE:   { disposition: permanent, bucket: extract_quality }
   IMAGE_UNSUPPORTED:      { disposition: permanent, bucket: extract_quality }
 
-  # escalatable=false 는 BLOCKED_HOST 하나뿐이다 — 내부망에 헤드리스를 겨누는 것 자체가 SSRF 라
-  # "무조건 폴백" 정책의 유일한 예외다(recall 트레이드오프가 아니라 보안).
+  # escalatable=false 를 선언한 것은 BLOCKED_HOST 하나뿐이다 — 내부망에 헤드리스를 겨누는 것 자체가
+  # SSRF 라 "무조건 폴백" 정책의 예외다(recall 트레이드오프가 아니라 보안).
+  #
+  # 런타임 예외는 하나 더 있다: INVALID_URL 을 만드는 fetch 경로 팩토리(host 조회 실패)도 escalatable=false
+  # 다. 근거가 다르다 — 이쪽은 보안 판단이 아니라 성립 불가 판단이다(주소가 없으면 브라우저도 갈 곳이 없다).
+  # 여기에 선언하지 않는 이유는 INVALID_URL 을 fetch 경로가 아닌 팩토리(형식·스킴 위반)도 만들기 때문이다 —
+  # 선언하면 대조 테스트가 그 팩토리들에까지 없는 축을 요구하게 된다.
   BLOCKED_HOST:           { disposition: permanent, bucket: internal_error, escalatable: false }
   TOO_MANY_REDIRECTS:     { disposition: permanent, bucket: internal_error, escalatable: true }
   MALFORMED_REDIRECT:     { disposition: permanent, bucket: internal_error, escalatable: true }
