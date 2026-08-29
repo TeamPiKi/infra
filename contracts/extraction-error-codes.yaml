@@ -30,6 +30,9 @@
 codes:
   # -- 확정 실패 (422) — 호출자는 즉시 markFailed --
   NOT_PRODUCT_PAGE:       { disposition: permanent, bucket: not_product }
+  # 형식·스킴 위반(동기 검증)과 host 조회 실패(fetch 경로의 DNS 가드)가 이 code 를 공유한다. 팩토리가 fetch 경로
+  # 안팎에 걸쳐 있어 escalatable 을 선언하지 않는다 — 축 밖 팩토리까지 그 값을 요구하게 되고, 그건 소비 repo 의
+  # 대조 테스트가 어긋남으로 본다. fetch 경로의 팩토리는 escalatable=false 다(없는 host 는 브라우저도 못 간다).
   INVALID_URL:            { disposition: permanent, bucket: not_product }
 
   EMPTY_SHELL:            { disposition: permanent, bucket: unreadable, escalatable: true }
@@ -42,13 +45,9 @@ codes:
   LLM_INVALID_RESPONSE:   { disposition: permanent, bucket: extract_quality }
   IMAGE_UNSUPPORTED:      { disposition: permanent, bucket: extract_quality }
 
-  # escalatable=false 를 선언한 것은 BLOCKED_HOST 하나뿐이다 — 내부망에 헤드리스를 겨누는 것 자체가
-  # SSRF 라 "무조건 폴백" 정책의 예외다(recall 트레이드오프가 아니라 보안).
-  #
-  # 런타임 예외는 하나 더 있다: INVALID_URL 을 만드는 fetch 경로 팩토리(host 조회 실패)도 escalatable=false
-  # 다. 근거가 다르다 — 이쪽은 보안 판단이 아니라 성립 불가 판단이다(주소가 없으면 브라우저도 갈 곳이 없다).
-  # 여기에 선언하지 않는 이유는 INVALID_URL 을 fetch 경로가 아닌 팩토리(형식·스킴 위반)도 만들기 때문이다 —
-  # 선언하면 대조 테스트가 그 팩토리들에까지 없는 축을 요구하게 된다.
+  # 여기 선언된 escalatable=false 는 BLOCKED_HOST 뿐이다 — 내부망에 헤드리스를 겨누는 것 자체가 SSRF 라
+  # "무조건 폴백" 정책의 예외다(recall 트레이드오프가 아니라 보안). 선언되지 않은 또 하나의 예외는 위 INVALID_URL 의
+  # host 조회 실패 팩토리이며, 그쪽은 보안이 아니라 성립 불가(주소가 없으면 브라우저도 갈 곳이 없다)라 false 다.
   BLOCKED_HOST:           { disposition: permanent, bucket: internal_error, escalatable: false }
   TOO_MANY_REDIRECTS:     { disposition: permanent, bucket: internal_error, escalatable: true }
   MALFORMED_REDIRECT:     { disposition: permanent, bucket: internal_error, escalatable: true }
