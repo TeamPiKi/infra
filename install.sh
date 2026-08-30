@@ -196,6 +196,7 @@ install_asset skills/pr.md         "$cmd_dir/pr.md"         444 md
 install_asset skills/issue.md      "$cmd_dir/issue.md"      444 md
 install_asset skills/session-check.md "$cmd_dir/session-check.md" 444 md
 install_asset skills/session-close.md "$cmd_dir/session-close.md" 444 md
+install_asset skills/auto.md       "$cmd_dir/auto.md"       444 md
 
 # 규약 문서는 각 repo 의 CLAUDE.md 가 import 해야 효력이 있다. 그래서 import 할 CLAUDE.md 도,
 # 이 원칙을 적용할 코드도 없는 infra 자신과 워크스페이스 루트는 제외한다.
