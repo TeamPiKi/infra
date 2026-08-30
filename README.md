@@ -60,6 +60,8 @@ infra/
                  # 각 repo(infra 자신 포함)의 .claude/commands 로, 세션 관리(retitle·find-session)는 repo 무관이라 ~/.claude/commands 로 간다
   workspace/     # 워크스페이스 루트(로비) 자산 정본 — install.sh 가 루트의 .claude/rules 로 설치
     piki-workspace.md  # 로비 규칙 (지도·hop 규칙·hop 후 차이). 루트 CLAUDE.md 의 import 가 있어야 로드된다
+    workspace-init.sh       # 팀원 1회 부트스트랩 (루트 git init·.gitignore·settings.json·CLAUDE.md import·repo clone)
+    workspace-init.test.sh  # 위 스크립트 셀프 테스트 (오프라인 모드라 CI 에서도 돈다)
   claude/        # Claude Code 세션 자산 정본 — 설치 대상이 repo 가 아니라 사용자 홈(~/.claude)이라 그 구조를 미러링한다
     hooks/       # 세션 훅 (session-title-emit·session-title-compute) — 제목을 대화 맥락으로 갱신
     scripts/     # 세션 유틸 (find-session)
