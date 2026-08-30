@@ -15,9 +15,10 @@ root=${1:-$(git rev-parse --show-toplevel 2> /dev/null)}
 live_cwds=$'\n'
 for f in "$HOME"/.claude/sessions/*.json; do
     [ -f "$f" ] || continue
+    # read 는 입력이 비어도 명명 변수를 전부 대입하므로 set -u 아래서도 폴백이 필요 없다.
     IFS=$'\t' read -r pid cwd < <(jq -r '[.pid, .cwd] | @tsv' "$f" 2> /dev/null)
-    [ -n "${cwd:-}" ] || continue
-    kill -0 "${pid:-}" 2> /dev/null || continue
+    [ -n "$cwd" ] || continue
+    kill -0 "$pid" 2> /dev/null || continue
     live_cwds="$live_cwds$cwd"$'\n'
 done
 
