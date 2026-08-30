@@ -62,6 +62,7 @@ try ".gitignore 생성" test -f .gitignore
 try "settings.json 생성" test -f .claude/settings.json
 try "CLAUDE.md 생성" test -f CLAUDE.md
 eq "브랜치 이름" "$(git branch --show-current)" "workspace"
+eq "부트스트랩 직후 clean (첫 커밋이 산출물 전부 포함)" "$(git status --porcelain)" ""
 
 echo "2. settings.json 내용"
 if command -v jq > /dev/null 2>&1; then
@@ -108,6 +109,16 @@ printf '# 내 메모\n' > CLAUDE.md
 PIKI_INIT_OFFLINE=1 bash "$INIT" > "$LOGS/run3.log" 2>&1
 eq "CLAUDE.md 내용 보존" "$(cat CLAUDE.md)" "# 내 메모"
 try "import 줄 누락을 알린다" grep -q '직접 추가할 것' "$LOGS/run3.log"
+
+echo "7. 잘못된 자리에서는 멈춘다"
+mkdir -p "$WORKDIR/fakerepo/sub" && cd "$WORKDIR/fakerepo" || exit 1
+git init -q && git remote add origin https://github.com/TeamPiKi/core.git
+PIKI_INIT_OFFLINE=1 bash "$INIT" > "$LOGS/run4.log" 2>&1
+eq "origin 있는 repo 에서 exit 1" "$?" "1"
+try "clone 을 시작하지 않음" grep -q '기존 repo' "$LOGS/run4.log"
+cd "$WORKDIR/fakerepo/sub" || exit 1
+PIKI_INIT_OFFLINE=1 bash "$INIT" > "$LOGS/run5.log" 2>&1
+eq "repo 하위 폴더에서 exit 1" "$?" "1"
 
 echo
 printf '통과 %d, 실패 %d\n' "$PASS" "$FAIL"

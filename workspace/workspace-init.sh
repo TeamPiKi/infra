@@ -23,6 +23,21 @@ OFFLINE="${PIKI_INIT_OFFLINE:-0}"
 
 say() { printf '%s\n' "$*"; }
 
+# ---- 0. 진입 가드 ----
+#
+# 기존 repo 안에서 돌리면 1-4단계가 "이미 있음" 으로 조용히 건너뛰고 5단계가 그 안에 repo 5개를
+# clone 한다. 워크스페이스 루트는 origin 이 없다는 사실로 소비 repo 와 갈린다.
+# toplevel 은 물리 경로로 나오므로 비교도 물리 경로로 한다 (macOS /tmp·/var 는 symlink).
+top=$(git rev-parse --show-toplevel 2> /dev/null)
+if [ -n "$top" ] && [ "$top" != "$(pwd -P)" ]; then
+    say "기존 repo($top) 의 하위 폴더다 - 워크스페이스로 쓸 폴더에서 다시 실행"
+    exit 1
+fi
+if [ -d .git ] && git remote get-url origin > /dev/null 2>&1; then
+    say "origin 이 있는 기존 repo 다 - 워크스페이스로 쓸 폴더에서 다시 실행"
+    exit 1
+fi
+
 # ---- 1. 루트를 git repo 로 ----
 #
 # 브랜치 이름을 workspace 로 두는 건 표시용이다. 이 repo 는 origin 이 없고 앞으로도 없다 -
@@ -116,7 +131,8 @@ fi
 # 쓰고 나중에 다시 돌리면 된다.
 missing=""
 for r in $REPOS; do
-    [ -e "$r" ] && continue
+    # 폴더 존재가 아니라 repo 존재를 본다 - 미리 만들어 둔 빈 폴더를 "있음" 으로 오판하지 않는다.
+    [ -d "$r/.git" ] && continue
     missing="$missing $r"
 done
 
@@ -128,7 +144,9 @@ else
     for r in $missing; do
         if command -v gh > /dev/null 2>&1; then
             gh repo clone "TeamPiKi/$r" "$r" -- -q 2> /dev/null
-        else
+        fi
+        # gh 가 없거나 실패했으면 https 로 폴백한다 - repo 5개는 전부 public 이다.
+        if [ ! -d "$r/.git" ]; then
             git clone -q "https://github.com/TeamPiKi/$r.git" "$r" 2> /dev/null
         fi
         if [ -d "$r/.git" ]; then
@@ -141,7 +159,7 @@ fi
 
 # ---- 첫 커밋 (아직 이력이 없을 때만) ----
 if [ -z "$(git log --oneline -1 2> /dev/null)" ]; then
-    git add .gitignore .claude/settings.json 2> /dev/null
+    git add .gitignore .claude/settings.json CLAUDE.md 2> /dev/null
     if git -c commit.gpgsign=false commit -q -m "chore: 워크스페이스 루트 설정" 2> /dev/null; then
         say "첫 커밋 생성"
     else
