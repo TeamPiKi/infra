@@ -206,7 +206,7 @@ if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
 fi
 
 # 루트 CLAUDE.md 가 `@.claude/rules/piki-workspace.md` 로 import 해야 로드된다(실측).
-# 그 한 줄은 지금은 사람이 넣고 자동화는 infra#58.
+# 그 한 줄은 workspace/workspace-init.sh 가 만든다.
 if [ "$workspace" = 1 ]; then
   workspace_rules_dir="$repo_root/.claude/rules"
   mkdir -p "$workspace_rules_dir"
