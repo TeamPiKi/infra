@@ -10,36 +10,7 @@
 
 ### 0단계: 작업 위치 가드 + 모드 결정 + base branch 자동 감지
 
-**0-A-0. 로비(워크스페이스 루트) 판별 - 다른 어떤 판정보다 먼저 한다.**
-
-워크스페이스 루트(`piki/`)는 repo 여럿을 자식으로 둔 **세션 시작 자리**라 어느 repo 에도 서 있지 않다. 루트도 git repo 라 아래 0-A 는 이걸 못 걸러낸다 - 브랜치(`workspace`)가 base 후보와 달라 "작업 브랜치" 로 통과해 아무 repo 도 아닌 곳에서 create 모드까지 간다 (지금은 루트에 origin 이 없어 앞의 `git fetch` 가 먼저 터지지만, 안내가 "네트워크 확인" 이라 원인을 가린다).
-
-```bash
-# 루트 자신의 origin 유무로 판별하지 않는 이유: "origin 없음" 은 remote 를 아직 안 붙인 소비 repo 와 구분되지 않는다.
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "git repo 가 아니다 - 중단"; exit 1; }
-LOBBY=0
-for d in "$ROOT"/*/; do
-  [ -e "${d}.git" ] || continue
-  case "$(git -C "$d" remote get-url origin 2>/dev/null)" in
-    *TeamPiKi/*) LOBBY=1; break ;;
-  esac
-done
-echo "LOBBY=$LOBBY ROOT=$ROOT"
-```
-
-`LOBBY=0` 이면 평소처럼 아래 0-A 로 간다.
-
-`LOBBY=1` 이면 **여기서 멈추고 작업할 워크트리를 고른다.** 후보는 자식 repo 를 가로질러 모은다:
-
-```bash
-~/.claude/scripts/piki-worktrees.sh    # repo <TAB> path <TAB> branch <TAB> open|free
-```
-
-- **후보가 있으면** `AskUserQuestion`(single-select) 으로 "어느 워크트리에서 `/pr` 을 이어갈까요?" 를 묻는다. 라벨은 `<repo> / <branch>`, 설명에 경로를 넣는다.
-  - **`free` 후보를 앞에 둔다** (첫 번째 = Recommended). `open` 후보는 라벨에 `(세션 열림)` 을 붙여 뒤에 나열하고, 설명에 "다른 세션이 작업 중이라 같은 파일을 동시에 고칠 수 있다" 를 덧붙인다. 전부 `open` 이어도 멈추지 않는다 - 위험을 알리고 고를지는 사용자가 정한다.
-  - 선택 → `EnterWorktree` 를 `path={선택한 경로}` 로 부른 뒤 **0단계를 처음부터 다시 시작**한다. cwd 가 그 워크트리라 이제 `LOBBY=0` 으로 떨어진다.
-  - 거부 → 멈춘다.
-- **후보가 없으면** 올릴 작업이 어디에도 없다. 그 사실을 알리고 멈춘다 (`/issue` 또는 `git -C <repo> worktree add` 로 워크트리를 먼저 만든다).
+**로비(워크스페이스 루트)는 절차로 가로막지 않는다** - 루트는 origin 이 없어 바로 아래 origin 가드에서 안내와 함께 멈춘다. 어느 워크트리에서 이어갈지는 대화 맥락으로 판단해 `EnterWorktree(path=)` 로 옮긴 뒤 0단계를 처음부터 다시 시작한다 (후보 열거: `~/.claude/scripts/piki-worktrees.sh`, 출력 `repo TAB path TAB branch TAB open|free`, `open`=다른 세션 사용 중). 고르게 하는 고정 다이얼로그는 두지 않는다 - 차단은 origin 가드가, "작업 전에 들어간다" 규칙은 루트 세션에 상주하는 로비 규칙 문서가 맡는다 (#69).
 
 **0-A. 작업 위치 가드 (워크트리 감지)** — `/pr` 의 모든 git/gh 명령은 현재 작업 디렉토리(cwd) 기준으로 돈다. 세션이 워크트리 안에 있으면 git worktree 특성상 자동으로 그 워크트리 브랜치를 바라보므로 별도 처리가 필요 없다. 문제는 cwd 가 작업 브랜치와 어긋난 경우 — 워크트리에서 작업해놓고 메인 체크아웃(base 브랜치)에서 `/pr` 을 부르면 조용히 틀린 PR(또는 "변경 없음")이 만들어진다. 이를 먼저 거른다.
 
@@ -47,6 +18,8 @@ echo "LOBBY=$LOBBY ROOT=$ROOT"
 CURRENT_BRANCH=$(git branch --show-current)
 # detached HEAD 면 --show-current 가 빈 문자열이라 아래 같음/다름 가드를 조용히 통과한다 - 이름 있는 브랜치를 강제.
 [ -n "$CURRENT_BRANCH" ] || { echo "detached HEAD - 작업 브랜치를 체크아웃한 뒤 /pr 을 다시 호출."; exit 1; }
+# origin 부재는 네트워크 장애와 다른 문제다(워크스페이스 루트가 대표 사례). 선판정 없이 fetch 실패로 뭉치면 "네트워크 확인" 이 거짓 안내가 된다.
+git remote get-url origin >/dev/null 2>&1 || { echo "origin 없음 - 로비(워크스페이스 루트)라면 작업 워크트리로 EnterWorktree(path=) 후 /pr 재시작 (후보: ~/.claude/scripts/piki-worktrees.sh)"; exit 1; }
 # origin 최신화 — base 판정과 1단계 log·diff, Start date 계산은 전부 origin/$BASE 기준이라, fetch 없이는 stale 참조로 남의 커밋이 diff 에 섞인다.
 # 실패 시 중단 — stale 기준으로 그냥 진행하면 위 문제가 조용히 그대로 일어난다 (네트워크·인증 확인 후 재시도).
 git fetch origin -q || { echo "git fetch 실패 — origin 이 stale 인 채 진행하지 않는다. 네트워크 확인 후 재시도."; exit 1; }
