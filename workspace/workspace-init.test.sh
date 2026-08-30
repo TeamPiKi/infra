@@ -25,6 +25,12 @@ LOGS="$WORKDIR/logs"
 ROOT="$WORKDIR/root"
 mkdir -p "$LOGS" "$ROOT"
 
+# 커밋 단언은 git 사용자 설정을 전제한다. CI 러너엔 없으므로 격리된 설정을 만들어 준다
+# (러너·개발자 개인의 전역 설정에도 물들지 않는다).
+export GIT_CONFIG_GLOBAL="$WORKDIR/gitconfig"
+git config --file "$GIT_CONFIG_GLOBAL" user.name piki-init-test
+git config --file "$GIT_CONFIG_GLOBAL" user.email piki-init-test@example.invalid
+
 PASS=0
 FAIL=0
 
