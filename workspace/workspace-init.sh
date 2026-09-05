@@ -79,6 +79,9 @@ fi
 # SessionStart 부트스트랩 한 줄이 infra 의 install.sh 를 받아 실행한다. 소비 repo 들과 똑같은
 # 패턴이라 루트에도 스킬(.claude/commands)과 로비 규칙(.claude/rules/piki-workspace.md)이 깔린다.
 # 슬래시 목록은 **세션을 시작한 폴더** 기준이고 hop 후에도 안 바뀌므로(실측), 루트 설치가 필수다.
+# matcher 를 startup|resume 으로 한정한다: SessionStart 는 clear·compact 에도 발동하는데 그때는
+# 디스크의 자산이 그대로라 다시 깔 게 없고, 대기만 생긴다. resume 은 새 프로세스로 옛 세션을 열 때
+# startup 대신 오는 값이라 빼면 그 경로가 영영 설치를 못 받는다.
 #
 # autoMemoryDirectory 는 모든 piki 세션이 기억을 한 곳에 모으기 위한 것이다. 루트 세션과 repo
 # 세션이 서로 다른 공책을 쓰면 한쪽이 배운 것을 다른 쪽이 모른다. 물결표는 Claude Code 가 푸는
@@ -93,6 +96,7 @@ else
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup|resume",
         "hooks": [
           {
             "type": "command",

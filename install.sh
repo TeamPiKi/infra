@@ -20,6 +20,26 @@ else
   get() { gh api -H "Accept: application/vnd.github.raw" "repos/$INFRA_REPO/contents/$1" 2>/dev/null; }
 fi
 
+# 원격 정본의 blob sha 목록을 한 번에 받아 둔다(경로<TAB>sha). 자산마다 내려받기 전에 설치본의
+# git hash-object 와 비교해 같으면 다운로드를 건너뛴다 — 세션 시작 지연의 대부분이 바뀌지도 않은
+# 파일을 매번 다시 받는 순차 API 호출이었다(자산 16개 ≈ 6초). 이 목록을 못 받으면 비워 두고 예전처럼
+# 전부 받는다: 느려질 뿐 깨지지는 않는다. self 모드는 로컬 cat 이라 비교할 이유가 없다.
+TREE=""
+if [ "$self" = 0 ]; then
+  TREE=$(gh api "repos/$INFRA_REPO/git/trees/HEAD?recursive=1" \
+           --jq '.tree[] | select(.type=="blob") | "\(.path)\t\(.sha)"' 2>/dev/null || true)
+fi
+
+# $1=자산 경로 $2=설치 대상. 설치본이 정본과 같은 blob 이면 0.
+unchanged() {
+  [ -n "$TREE" ] && [ -f "$2" ] || return 1
+  local remote local_sha
+  remote=$(printf '%s\n' "$TREE" | awk -F'\t' -v p="$1" '$1==p {print $2; exit}')
+  [ -n "$remote" ] || return 1
+  local_sha=$(git hash-object "$2" 2>/dev/null) || return 1
+  [ "$remote" = "$local_sha" ]
+}
+
 # 자식으로 판별하는 이유: origin 없음으로 보면 remote 를 아직 안 붙인 소비 repo 가 루트로 오인된다.
 workspace=0
 if [ "$self" = 0 ] && [ -n "${repo_root:-}" ]; then
@@ -34,11 +54,13 @@ fi
 # $1=자산 경로 $2=설치 대상(절대경로) $3=권한 mode $4=검증 유형. 빈 응답이면 스킵해 기존 설치본을 유지한다.
 install_asset() {
   local tmp
-  tmp=$(mktemp)
-  if get "$1" >"$tmp" && [ -s "$tmp" ] && validate_asset "$tmp" "$4"; then
-    install -m "$3" "$tmp" "$2"
+  if ! unchanged "$1" "$2"; then
+    tmp=$(mktemp)
+    if get "$1" >"$tmp" && [ -s "$tmp" ] && validate_asset "$tmp" "$4"; then
+      install -m "$3" "$tmp" "$2"
+    fi
+    rm -f "$tmp"
   fi
-  rm -f "$tmp"
 
   # 결과가 아니라 선언을 기록한다. 그래야 fetch 실패한 자산을 다음 실행이 은퇴로 오인해 지우지 않는다.
   MANIFEST="$MANIFEST$2
@@ -117,36 +139,6 @@ reconcile_manifest() {
   fi
 }
 
-# 매니페스트 이전(#27)에 깔려 차집합으로 못 잡는 잔재. 새 은퇴는 여기 적지 않는다.
-RETIRED_HOOKS="session-auto-name.sh"
-
-retire_assets() {
-  local settings="$1" f tmp mode cmd
-  for f in $RETIRED_HOOKS; do
-    rm -f "$HOME/.claude/hooks/$f"
-  done
-
-  [ -f "$settings" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  jq -e . "$settings" >/dev/null 2>&1 || return 0
-
-  for f in $RETIRED_HOOKS; do
-    cmd="$HOME/.claude/hooks/$f"
-    grep -qF "$cmd" "$settings" || continue
-    tmp=$(mktemp)
-    if jq --arg cmd "$cmd" '
-         .hooks |= with_entries(
-           .value |= (map(.hooks |= map(select(.command != $cmd))) | map(select((.hooks | length) > 0)))
-         )
-         | .hooks |= with_entries(select((.value | length) > 0))
-       ' "$settings" >"$tmp" 2>/dev/null && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
-      mode=$(stat -f '%Lp' "$settings" 2>/dev/null || stat -c '%a' "$settings" 2>/dev/null || echo 644)
-      install -m "$mode" "$tmp" "$settings"
-    fi
-    rm -f "$tmp"
-  done
-}
-
 # 사용자 개인 설정을 고치는 유일한 지점이라 보수적으로 다룬다. 기존 항목은 지우거나 고치지 않아
 # 다른 훅과 공존하고, ~/.claude/.no-session-hooks 가 있으면 등록을 통째로 건너뛴다(탈출구).
 register_session_hooks() {
@@ -186,11 +178,11 @@ register_session_hooks() {
 install_asset hooks/commit-msg "$hooks_dir/commit-msg" 555 sh
 
 # 개발 스킬(slash command). infra 자신도 대상이다: 여기서도 커밋·PR 이 일어난다.
-# gc 는 commit 의 별칭이라 같은 정본을 두 이름으로 깐다. 버전 영역 노이즈는 .gitignore 가 막는다.
+# 정본 하나는 이름 하나로만 깐다 (별칭 금지 — 같은 내용을 두 번 받고 두 파일이 남는다).
+# 버전 영역 노이즈는 .gitignore 가 막는다.
 cmd_dir="$repo_root/.claude/commands"
 mkdir -p "$cmd_dir"
 install_asset skills/commit.md     "$cmd_dir/commit.md"     444 md
-install_asset skills/commit.md     "$cmd_dir/gc.md"         444 md
 install_asset skills/coderabbit.md "$cmd_dir/coderabbit.md" 444 md
 install_asset skills/pr.md         "$cmd_dir/pr.md"         444 md
 install_asset skills/issue.md      "$cmd_dir/issue.md"      444 md
@@ -239,7 +231,6 @@ if [ -d "$claude_dir" ]; then
   install_asset skills/retitle.md      "$claude_dir/commands/retitle.md"      444 md
   install_asset skills/find-session.md "$claude_dir/commands/find-session.md" 444 md
 
-  retire_assets "$claude_dir/settings.json"
   register_session_hooks "$claude_dir/settings.json"
 fi
 
