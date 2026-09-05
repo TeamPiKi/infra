@@ -186,11 +186,11 @@ register_session_hooks() {
 install_asset hooks/commit-msg "$hooks_dir/commit-msg" 555 sh
 
 # 개발 스킬(slash command). infra 자신도 대상이다: 여기서도 커밋·PR 이 일어난다.
-# gc 는 commit 의 별칭이라 같은 정본을 두 이름으로 깐다. 버전 영역 노이즈는 .gitignore 가 막는다.
+# 정본 하나는 이름 하나로만 깐다 (별칭 금지 — 같은 내용을 두 번 받고 두 파일이 남는다).
+# 버전 영역 노이즈는 .gitignore 가 막는다.
 cmd_dir="$repo_root/.claude/commands"
 mkdir -p "$cmd_dir"
 install_asset skills/commit.md     "$cmd_dir/commit.md"     444 md
-install_asset skills/commit.md     "$cmd_dir/gc.md"         444 md
 install_asset skills/coderabbit.md "$cmd_dir/coderabbit.md" 444 md
 install_asset skills/pr.md         "$cmd_dir/pr.md"         444 md
 install_asset skills/issue.md      "$cmd_dir/issue.md"      444 md
