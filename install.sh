@@ -20,6 +20,27 @@ else
   get() { gh api -H "Accept: application/vnd.github.raw" "repos/$INFRA_REPO/contents/$1" 2>/dev/null; }
 fi
 
+# 원격 정본의 blob sha 목록을 한 번에 받아 둔다(경로<TAB>sha). 자산마다 내려받기 전에 설치본의
+# git hash-object 와 비교해 같으면 다운로드를 건너뛴다 — 세션 시작 지연의 대부분이 바뀌지도 않은
+# 파일을 매번 다시 받는 순차 API 호출이었다(자산 16개 ≈ 6초). 이 목록을 못 받으면 비워 두고 예전처럼
+# 전부 받는다: 느려질 뿐 깨지지는 않는다. self 모드는 로컬 cat 이라 비교할 이유가 없다.
+TREE=""
+if [ "$self" = 0 ]; then
+  TREE=$(gh api "repos/$INFRA_REPO/git/trees/HEAD?recursive=1" \
+           --jq '.tree[] | select(.type=="blob") | "\(.path)\t\(.sha)"' 2>/dev/null || true)
+fi
+
+# $1=자산 경로 $2=설치 대상. 설치본이 정본과 같은 blob 이면 0.
+unchanged() {
+  [ -n "$TREE" ] && [ -f "$2" ] || return 1
+  local remote local_sha
+  remote=$(printf '%s\n' "$TREE" | awk -F'\t' -v p="$1" '$1==p {print $2; exit}')
+  [ -n "$remote" ] || return 1
+  local_sha=$(git hash-object "$2" 2>/dev/null) || return 1
+  [ "$remote" = "$local_sha" ]
+}
+
+
 # 자식으로 판별하는 이유: origin 없음으로 보면 remote 를 아직 안 붙인 소비 repo 가 루트로 오인된다.
 workspace=0
 if [ "$self" = 0 ] && [ -n "${repo_root:-}" ]; then
@@ -34,11 +55,13 @@ fi
 # $1=자산 경로 $2=설치 대상(절대경로) $3=권한 mode $4=검증 유형. 빈 응답이면 스킵해 기존 설치본을 유지한다.
 install_asset() {
   local tmp
-  tmp=$(mktemp)
-  if get "$1" >"$tmp" && [ -s "$tmp" ] && validate_asset "$tmp" "$4"; then
-    install -m "$3" "$tmp" "$2"
+  if ! unchanged "$1" "$2"; then
+    tmp=$(mktemp)
+    if get "$1" >"$tmp" && [ -s "$tmp" ] && validate_asset "$tmp" "$4"; then
+      install -m "$3" "$tmp" "$2"
+    fi
+    rm -f "$tmp"
   fi
-  rm -f "$tmp"
 
   # 결과가 아니라 선언을 기록한다. 그래야 fetch 실패한 자산을 다음 실행이 은퇴로 오인해 지우지 않는다.
   MANIFEST="$MANIFEST$2
