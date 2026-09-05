@@ -101,8 +101,7 @@ repo 이름을 `--show-toplevel` 이 아니라 **`--git-common-dir` 의 부모**
 PR 은 연관 이슈와 같은 분류를 갖는 것이 자연스러우므로 이슈 라벨을 우선하고, 이슈가 없으면 브랜치 prefix 가 곧 분류 라벨이다 — `/issue` 의 B-2 가 만드는 **8개 prefix 는 라벨과 1:1** 이다 (전체 1:1 은 아니다: `epic` 라벨은 브랜치가 없고 커밋 타입 `style` 은 라벨이 없다 — 그래서 아래 "실재 라벨 검증" 가드가 필요하다). 이 fallback 이 없으면 이슈 없이 만든 브랜치의 PR 이 조용히 라벨 없이 올라간다 (core 의 Discord PR 봇 라벨 표시 등 하류도 함께 빈다).
 
 ```bash
-# 한 블록에서 끝까지 계산하고 echo 로 값을 남긴다 — 셸 변수는 bash 호출 간 유지되지 않으므로,
-# 3-A 3번·3-B 메타데이터 보정 블록은 이 출력으로 확인한 값을 인라인으로 박아 쓴다 (SLUG 재도출과 같은 규칙).
+# 한 블록에서 끝까지 계산하고 echo 로 값을 남긴다. 3-A 3번·3-B 메타데이터 보정 블록은 이 출력값을 인라인으로 쓴다 (0-B 의 블록 규칙).
 ISSUE_LABELS=$(gh issue view {번호} --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null)   # 이슈 번호 미매칭이면 이 줄은 건너뛴다
 if [ -z "$ISSUE_LABELS" ]; then
   PREFIX=$(git branch --show-current | cut -d/ -f1)
@@ -112,7 +111,7 @@ fi
 echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
 ```
 
-- 라벨이 있으면 `### 3-A`(LABEL_ARGS 배열) / `### 3-B` 메타데이터 보정(EDIT_ARGS 배열)에서 부여한다. 두 블록 모두 **위 echo 로 확인한 값을 인라인으로 박는다** — 셸 변수가 블록 간 유지되지 않아서다.
+- 라벨이 있으면 `### 3-A`(LABEL_ARGS 배열) / `### 3-B` 메타데이터 보정(EDIT_ARGS 배열)에서 위 echo 값을 인라인으로 박아 부여한다.
 - fallback 까지 비면 그때만 라벨 없이 진행한다. (변수명은 `ISSUE_LABELS` 를 유지한다 — 출처가 어디든 "이 PR 의 분류 라벨" 이라는 의미는 같다.)
 
 ### 2단계: STAR 본문 작성 — create 모드 한정
@@ -196,7 +195,7 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
 3. 확인 후 PR 생성 — assignee / 라벨을 함께 부여한다:
    ```bash
    SLUG=$(basename "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")_$(git branch --show-current | tr '/' '_')
-   ISSUE_LABELS="{1단계 echo 로 확인한 값. '없음'이면 빈 값}"   # 셸 변수는 블록 간 미유지 — SLUG 처럼 블록 안에서 확정한다 ($BASE 는 0-A echo 의 BASE_GUESS)
+   ISSUE_LABELS="{1단계 echo 로 확인한 값. '없음'이면 빈 값}"   # $BASE 는 0-A echo 의 BASE_GUESS 를 인라인
    # 라벨 플래그는 배열로 — `${VAR:+--label "$VAR"}` 관용구는 zsh 가 unquoted 확장을
    # word split 하지 않아 "--label chore" 한 단어가 되어 unknown flag 로 터진다 (bash/zsh 양쪽 안전형).
    LABEL_ARGS=()
@@ -264,13 +263,13 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
    - 이유: 스쿼시 머지 후 blame 으로 오는 독자가 "초판 + 정오표"를 머릿속에서 리플레이하지 않고 본문만 읽으면 되게 한다. 본문이 늘 최종이므로 머지 시점의 별도 통합(fold) 단계도 필요 없다 — 언제 어디서 머지되든 본문은 이미 완결 서사다.
 4. **제목 변경 필요 검토**: 추가 변경으로 작업 의도/스코프가 바뀌었거나 기존 제목에 오타·부정확한 표현이 있으면 새 제목 제안. 그 외엔 제목 유지.
 5. 갱신본(최신화된 본문)을 `/tmp/pr_body_$SLUG.md` 에 저장(Write)한 뒤 본문 파일 링크를 채팅에 남겨 확인받는다 (위 "본문 확인 — 마크다운 링크로 보여주기"). 새 제목이 있으면 채팅에 제목·변경 이유를 함께 짚는다.
-6. 확인 후 `gh pr edit --body-file /tmp/pr_body_$SLUG.md` 로 갱신 (1번과 같은 경로 — 별도 bash 호출이라 `SLUG=$(basename "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")_$(git branch --show-current | tr '/' '_')` 를 다시 구한다). 제목 변경이 있으면 `--title "새 제목"` 추가.
+6. 확인 후 `gh pr edit --body-file /tmp/pr_body_$SLUG.md` 로 갱신한다 (1번과 같은 경로, SLUG 는 블록 안에서 다시 구한다). 제목 변경이 있으면 `--title "새 제목"` 추가.
 7. **CodeRabbit 리뷰 대응** — 이번 변경이 CodeRabbit 리뷰 대응이라면 commit + push 로 끝내지 않는다. CodeRabbit 리뷰(인라인 thread + review body nitpick) 조회·평가·reply·resolve 는 **`/coderabbit` 스킬**로 처리한다. 그 스킬이 author 매칭(GraphQL `reviewThreads` 는 `coderabbitai`, REST `reviews` 는 `coderabbitai[bot]` 이라 `coderabbitai` 로 시작하는지로 판별), nitpick 조회, accept/reject reply·resolve 정책을 담는다. (사람 리뷰 thread 는 작성자가 직접 답하므로 `/coderabbit` 도 건드리지 않는다.)
 
 8. **메타데이터 보정** — 이전 버전 스킬로 만든 PR 은 assignee / 라벨 / Project / Start date 가 비어 있을 수 있다. update 모드에서도 멱등하게 보정한다 (이미 설정돼 있으면 no-op). `item-add` 는 이미 등록된 PR 이면 기존 item id 를 그대로 반환한다.
     Status 는 **현재 값을 먼저 조회해, 리뷰 이전 단계(`Backlog` / `Ready` / `In progress`)일 때만** `In review` 로 올린다 — 이미 `Done` 등으로 옮긴 PR 을 되돌리지 않기 위함이다. Start date 도 멱등 — 이미 set 되어 있으면 건드리지 않는다 (사람이 수동으로 다른 의미로 박았을 수 있어 보존). Status / Start date 조회는 item 노드를 직접 부르는 GraphQL 이 안정적이다 (`gh project item-list` 는 단일 선택 필드 값을 신뢰성 있게 주지 않는다):
     ```bash
-    ISSUE_LABELS="{1단계 echo 로 확인한 값. '없음'이면 빈 값}"   # 셸 변수는 블록 간 미유지 — 블록 안에서 확정한다
+    ISSUE_LABELS="{1단계 echo 로 확인한 값. '없음'이면 빈 값}"
     EDIT_ARGS=(--add-assignee @me)                               # 조건부 플래그는 배열로 (3-A 와 동일한 zsh 함정 회피, 호출 1회)
     [ -n "$ISSUE_LABELS" ] && EDIT_ARGS+=(--add-label "$ISSUE_LABELS")
     gh pr edit "${EDIT_ARGS[@]}"

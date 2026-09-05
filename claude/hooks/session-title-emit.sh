@@ -66,10 +66,9 @@ fi
 #    첫 주기(10회)까지 기다리면 짧은 세션은 맥락 제목을 영영 못 받는다.
 if [ "$n" -eq 2 ] || [ $((n % 10)) -eq 0 ]; then
     tp=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)
-    cwd=$(printf '%s' "$input" | jq -r '.cwd // empty' 2>/dev/null)
     compute="$HOME/.claude/hooks/session-title-compute.sh"
     if [ -n "$tp" ] && [ -f "$tp" ] && [ -x "$compute" ]; then
-        nohup "$compute" "$tp" "$nxt" "$cwd" > /dev/null 2>&1 &
+        nohup "$compute" "$tp" "$nxt" > /dev/null 2>&1 &
     fi
 fi
 exit 0
