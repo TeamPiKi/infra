@@ -1,9 +1,12 @@
+---
+disable-model-invocation: true
+---
 세션 작업을 마무리한다 — 지금 들어가 있는 작업 워크트리를 (**머지+clean 을 자체 점검해** 그럴 때만) 나가면서 제거하고, 머지로 닫혔어야 할 연결 이슈가 아직 열려 있으면 동의받아 닫은 뒤, 사용자에게 `/clear` 입력을 안내한다. **자체 점검으로 단독 동작**하므로 `/session-check` 를 먼저 안 거쳐도 되고, `/session-check` 는 변경 없이 미리 보는 read-only 프리뷰다. `/session-check` 의 짝(teardown) 스킬.
 
 ## 언제 쓰나
 
 - 지금 작업하던 워크트리를 정리하고 세션을 끝내려 할 때. `/session-check` 를 먼저 부르지 않아도 close 가 자체 점검한다 (check 는 변경 없이 미리 보고 싶을 때 쓰는 선택적 read-only 프리뷰).
-- **항상 사용자가 직접 호출한다.** `/session-check` 는 점검만 하고 이 스킬을 자동 호출하지 않는다 — 닫아도 안전하면 사용자에게 `/session-close` 입력을 안내할 뿐이다. close(워크트리 제거)는 이 스킬을 명시적으로 호출할 때만 일어난다.
+- **항상 사용자가 직접 호출한다.** frontmatter 의 `disable-model-invocation` 이 모델의 자동 로드와 도구 호출을 막으므로, `/session-check` 는 닫아도 안전할 때 `/session-close` 입력을 안내할 뿐이다. close(워크트리 제거)는 사용자가 이 스킬을 입력할 때만 일어난다.
 
 ## 전제 — 작업 중엔 워크트리에 "들어가 있다"
 
