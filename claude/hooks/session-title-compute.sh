@@ -8,7 +8,7 @@
 #
 # 실행 위치와 플래그: 프로젝트 디렉토리가 아니라 캐시 디렉토리에서 돌리고, 세션을 남기지 않는다.
 # 프로젝트 안에서 돌리면 CLAUDE.md·rules·메모리·MCP 서버를 제목 한 줄 만들자고 매번 로드하고,
-# 계산마다 세션 파일이 남아 /find-session 결과에 가짜 세션으로 섞인다 (실측: 세션 파일의 절반이 이 잔재였다).
+# 계산마다 세션 파일이 남아 /find-session 결과에 가짜 세션으로 섞인다 (실측 2026-09-05: 정리 전 세션 파일 682개 중 343개가 이 잔재였다).
 #   --no-session-persistence  세션 파일을 쓰지 않는다
 #   --strict-mcp-config       사용자 설정의 MCP 서버를 띄우지 않는다
 #   CLAUDE_CODE_DISABLE_AUTO_MEMORY=1  자동 메모리를 읽지도 만들지도 않는다 (실측: 없으면 빈 memory 디렉토리가 생긴다)
@@ -25,7 +25,7 @@ command -v claude > /dev/null 2>&1 || exit 0
 # 최근 사용자 발화만 추출한다. 슬래시 커맨드·시스템 주입 블록은 작업 맥락이 아니므로 걸러낸다.
 ctx=$(jq -r 'select(.type=="user") | .message.content
              | if type=="string" then . else ([.[]? | select(.type=="text") | .text] | join(" ")) end' "$tp" 2>/dev/null \
-    | grep -vE '^<|command-name|command-message|local-command|system-reminder|Caveat:' \
+    | grep -vE '^<|command-name|command-message|command-args|local-command|system-reminder|Caveat:' \
     | grep -v '^[[:space:]]*$' \
     | tail -14 | tail -c 2000)
 [ -n "$ctx" ] || exit 0
@@ -42,8 +42,9 @@ instruction=$(printf '아래 <대화>는 개발 세션의 최근 사용자 발�
 </대화>' "$ctx")
 
 # 응답 정제 — 모델이 헤더·코드펜스·불릿을 앞세우는 경우가 있어 그런 줄은 버리고 첫 실질 줄만 취한다.
+# stdin 은 닫아서 넘긴다(< /dev/null) — 열어 두면 claude -p 가 파이프 입력을 3초 기다린다(실측 4.4초 중 3초).
 mkdir -p "$run_dir" 2>/dev/null
-t=$(cd "$run_dir" 2>/dev/null && CLAUDE_TITLE_COMPUTE=1 CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude -p "$instruction" --model haiku --no-session-persistence --strict-mcp-config 2>/dev/null \
+t=$(cd "$run_dir" 2>/dev/null && CLAUDE_TITLE_COMPUTE=1 CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude -p "$instruction" --model haiku --no-session-persistence --strict-mcp-config < /dev/null 2>/dev/null \
     | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
     | grep -vE '^(#|`|-|\*|>|$)' \
     | head -1 | tr -d '\n"' | sed 's/[[:space:]]*[.。]$//')

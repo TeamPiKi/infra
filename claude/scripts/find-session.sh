@@ -56,7 +56,7 @@ while IFS=$'\t' read -r mtime hits file; do
     if [ -z "$title" ]; then
         title=$(jq -r 'select(.type=="user") | .message.content
                        | if type=="string" then . else ([.[]? | select(.type=="text") | .text] | join(" ")) end' "$file" 2> /dev/null \
-            | grep -vE '^<|command-name|command-message|local-command|Caveat:' | grep -v '^[[:space:]]*$' | head -1 | cut -c1-60)
+            | grep -vE '^<|command-name|command-message|command-args|local-command|Caveat:' | grep -v '^[[:space:]]*$' | head -1 | cut -c1-60)
     fi
 
     # 그 세션이 실제로 돌던 디렉토리. 마지막 값을 쓴다 — 세션 도중 worktree 로 진입하면 cwd 가 바뀌므로
