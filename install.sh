@@ -40,7 +40,6 @@ unchanged() {
   [ "$remote" = "$local_sha" ]
 }
 
-
 # 자식으로 판별하는 이유: origin 없음으로 보면 remote 를 아직 안 붙인 소비 repo 가 루트로 오인된다.
 workspace=0
 if [ "$self" = 0 ] && [ -n "${repo_root:-}" ]; then
@@ -140,36 +139,6 @@ reconcile_manifest() {
   fi
 }
 
-# 매니페스트 이전(#27)에 깔려 차집합으로 못 잡는 잔재. 새 은퇴는 여기 적지 않는다.
-RETIRED_HOOKS="session-auto-name.sh"
-
-retire_assets() {
-  local settings="$1" f tmp mode cmd
-  for f in $RETIRED_HOOKS; do
-    rm -f "$HOME/.claude/hooks/$f"
-  done
-
-  [ -f "$settings" ] || return 0
-  command -v jq >/dev/null 2>&1 || return 0
-  jq -e . "$settings" >/dev/null 2>&1 || return 0
-
-  for f in $RETIRED_HOOKS; do
-    cmd="$HOME/.claude/hooks/$f"
-    grep -qF "$cmd" "$settings" || continue
-    tmp=$(mktemp)
-    if jq --arg cmd "$cmd" '
-         .hooks |= with_entries(
-           .value |= (map(.hooks |= map(select(.command != $cmd))) | map(select((.hooks | length) > 0)))
-         )
-         | .hooks |= with_entries(select((.value | length) > 0))
-       ' "$settings" >"$tmp" 2>/dev/null && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
-      mode=$(stat -f '%Lp' "$settings" 2>/dev/null || stat -c '%a' "$settings" 2>/dev/null || echo 644)
-      install -m "$mode" "$tmp" "$settings"
-    fi
-    rm -f "$tmp"
-  done
-}
-
 # 사용자 개인 설정을 고치는 유일한 지점이라 보수적으로 다룬다. 기존 항목은 지우거나 고치지 않아
 # 다른 훅과 공존하고, ~/.claude/.no-session-hooks 가 있으면 등록을 통째로 건너뛴다(탈출구).
 register_session_hooks() {
@@ -262,7 +231,6 @@ if [ -d "$claude_dir" ]; then
   install_asset skills/retitle.md      "$claude_dir/commands/retitle.md"      444 md
   install_asset skills/find-session.md "$claude_dir/commands/find-session.md" 444 md
 
-  retire_assets "$claude_dir/settings.json"
   register_session_hooks "$claude_dir/settings.json"
 fi
 
