@@ -298,7 +298,7 @@ gh project item-add 1 --owner TeamPiKi --url {이슈 URL}
 - 분류 자동 결정은 시그널이 명확할 때만. 모호하면 `chore` fallback (보수적).
 - 라벨이 레포에 없어 `gh issue create` 가 실패하면 에러 그대로 보고.
 - `gh issue develop` 은 `--name` (브랜치 이름 옵션) 을 명시 (인터랙티브 회피). `--branch-name` 은 존재하지 않는 옵션이니 주의. `--checkout` 은 **현재 브랜치 작업을 고른 경우에만** 붙인다 — 워크트리 작업이면 현재 디렉토리가 끌려가 충돌하므로 빼고, 체크아웃은 `EnterWorktree` 가 대신한다.
-- **워크트리 진입은 `EnterWorktree(path=...)` 로만.** `git worktree add` 로 먼저 만든 뒤 `path` 로 진입한다. `EnterWorktree(name=...)` 는 새 브랜치를 자체 생성하며 baseRef 기본값이 repo 의 git default branch 를 가리켜, base 가 default 와 다른 repo(core)에서 분기 정책과 어긋난다. `path` 로 진입한 워크트리는 `ExitWorktree` 가 제거하지 않으므로, 정리는 `/session-close` 에 맡긴다.
+- **워크트리 진입은 `EnterWorktree(path=...)` 로만.** `git worktree add` 로 먼저 만든 뒤 `path` 로 진입한다. `EnterWorktree(name=...)` 는 새 브랜치를 자체 생성하며 baseRef 기본값이 repo 의 git default branch 를 가리켜, base 가 default 와 다른 repo(core)에서 분기 정책과 어긋난다. `path` 로 진입한 워크트리는 `ExitWorktree({action:"remove"})` 가 "not the owner" 로 거부하므로(이 세션의 도구가 만든 자리가 아니라는 뜻일 뿐, 남의 자리 신호가 아니다), 정리는 `/session-close` 에 맡긴다. 그 스킬이 다른 세션 사용 여부를 확인한 뒤 `git worktree remove` 로 직접 지운다.
 - `gh project item-add` 권한 부족 시 사용자에게 `gh auth refresh -h github.com -s project` 안내 (인터랙티브 디바이스 인증, 일회성).
 - **Project 1 은 레포와 같은 TeamPiKi org 소유라 same-org 연결이다.** 이슈가 붙으면 `gh issue view --json projectItems` 로 바로 확인된다 (depromeet #99 시절의 cross-org 제약 — projectItems 가 빈 배열이라 `item-list` 로 우회하던 것 — 은 보드 이관으로 해소됨).
 - 본문에 `#{epic 번호}` 가 들어가면 GitHub 가 자동 cross-reference 링크 — 별도 sub-issue API 불필요.

@@ -23,7 +23,7 @@ base 는 참고용이다. 스킬은 `origin/dev` 존재 여부로 매번 판정�
 - **이전 워크트리는 read-only 로 둔다.** `Edit` 은 세션이 선 워크트리 밖을 거부하지만 Bash 는 막지 않는다. 그 차이를 우회 수단으로 쓰지 않는다. 고쳐야 하면 그리로 hop 한다.
 - **루트에서 빌드·테스트를 돌리지 않는다.** hop 후에 돌린다.
 - **다른 세션이 열어 둔 워크트리는 경고를 보고 고른다.** 후보 열거(`$HOME/.claude/scripts/piki-worktrees.sh`)가 `open` 으로 표시할 뿐, 제외하지는 않는다. 같은 파일을 동시에 고칠 위험을 감수할지는 사용자가 정한다.
-- **자기가 만들지 않은 워크트리는 지우지 않는다.** `ExitWorktree(action:"remove")` 의 비소유자 거부가 곧 "내 자리가 아니다" 신호다. `keep` 으로 나오고 사용자에게 알린다.
+- **다른 세션이 쓰는 워크트리는 지우지 않는다.** `ExitWorktree(action:"remove")` 의 비소유자 거부는 남의 자리 신호가 아니다. 이 세션의 도구가 만들지 않은 자리라는 뜻이고, `path=` 로 들어간 자리는 전부 그렇다. 남의 자리인지는 세션 레지스트리(`piki-worktrees.sh` 의 `open`)와 `git worktree remove` 의 lock 거부로 판단한다. 정리는 `/session-close` 가 그 판정을 거쳐 `git worktree remove` 로 직접 한다.
 
 ## hop 후에 따라오는 것과 아닌 것
 
