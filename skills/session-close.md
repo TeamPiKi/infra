@@ -1,9 +1,12 @@
+---
+disable-model-invocation: true
+---
 세션 작업을 마무리한다 — 지금 들어가 있는 작업 워크트리를 (**머지+clean 을 자체 점검해** 그럴 때만) 나가면서 제거하고, 머지로 닫혔어야 할 연결 이슈가 아직 열려 있으면 동의받아 닫은 뒤, 사용자에게 `/clear` 입력을 안내한다. **자체 점검으로 단독 동작**하므로 `/session-check` 를 먼저 안 거쳐도 되고, `/session-check` 는 변경 없이 미리 보는 read-only 프리뷰다. `/session-check` 의 짝(teardown) 스킬.
 
 ## 언제 쓰나
 
 - 지금 작업하던 워크트리를 정리하고 세션을 끝내려 할 때. `/session-check` 를 먼저 부르지 않아도 close 가 자체 점검한다 (check 는 변경 없이 미리 보고 싶을 때 쓰는 선택적 read-only 프리뷰).
-- **항상 사용자가 직접 호출한다.** `/session-check` 는 점검만 하고 이 스킬을 자동 호출하지 않는다 — 닫아도 안전하면 사용자에게 `/session-close` 입력을 안내할 뿐이다. close(워크트리 제거)는 이 스킬을 명시적으로 호출할 때만 일어난다.
+- **항상 사용자가 직접 호출한다.** frontmatter 의 `disable-model-invocation` 이 모델의 자동 로드와 도구 호출을 막으므로, `/session-check` 는 닫아도 안전할 때 `/session-close` 입력을 안내할 뿐이다. close(워크트리 제거)는 사용자가 이 스킬을 입력할 때만 일어난다.
 
 ## 전제 — 작업 중엔 워크트리에 "들어가 있다"
 
@@ -14,7 +17,7 @@
 - **머지+clean 일 때만 제거.** uncommitted 가 있거나 브랜치가 아직 머지 안 됐으면 **거부**한다(작업 유실 방지). **session-check 없이도 단독으로 안전한지 자체 점검**한다 — 아래 절차 2 의 clean·머지 판정이 그 점검이다.
 - **제거는 `ExitWorktree` 로 한다.** `ExitWorktree({action:"remove"})` 가 워크트리 나가기 + 디렉터리/브랜치 삭제 + cwd 복원(메인으로)을 한 번에 처리한다 — "자기가 선 폴더를 자기가 못 지운다"는 문제를 도구가 해결한다. 수동 `git -C ... worktree remove` 보다 안전·정석.
 - **현재 작업 1개만.** 다른 워크트리·머지된 다른 stale 브랜치는 안 건드린다(별도 세션 몫).
-- **자기가 만들지 않은 워크트리는 제거하지 않는다.** 워크스페이스 루트 세션은 `EnterWorktree({path})` 로 **이미 있는** 워크트리에 들어가 작업한다(정상 경로). 그때 `ExitWorktree({action:"remove"})` 는 비소유자로 거부하는데, 그 거부가 곧 "내가 만든 자리가 아니다" 신호다. 우회해 지우지 않는다. 그 자리는 다른 세션·다음 작업이 쓰고 있을 수 있고, 이 스킬은 그것을 판단할 근거가 없다.
+- **다른 세션이 쓰는 워크트리는 제거하지 않는다.** `ExitWorktree({action:"remove"})` 의 "not the owner" 거부는 남의 자리라는 뜻이 아니다. 이 세션의 `EnterWorktree` 가 만들지 않은 자리라는 뜻이고, `/issue` 의 정상 경로(`git worktree add` + `EnterWorktree({path})`)로 만든 자리는 전부 여기 해당한다. 남의 자리인지는 두 신호로 본다. 세션 레지스트리(`~/.claude/sessions/*.json`)에 살아 있는 다른 세션의 cwd 가 이 워크트리 안에 있는가, 그리고 `git worktree remove` 가 liveness lock 으로 거부하는가(도구가 `name=` 으로 만든 자리에만 lock 이 걸린다. 실측: `path` 로 들어간 자리 18개 중 lock 0개). 둘 다 아니면 아래 절차의 fallback 으로 직접 지운다.
 - **임시파일도 함께 정리한다.** 워크트리를 제거할 때, 이 브랜치가 `/tmp` 에 남긴 `/pr` 임시파일(`pr_body_$SLUG.md`, `SLUG` = `<repo>_<브랜치>` — `/pr` 0단계와 같은 규칙)도 지운다. **현재 브랜치 것만** — 동시에 도는 다른 세션의 파일은 안 건드린다("현재 1개만"과 같은 결). `session-close` 를 안 거치고 떠난 세션·중단 작업의 누수는 다음 `/pr` 진입의 mtime prune 이 회수한다.
 - **머지로 닫혔어야 할 연결 이슈가 열려 있으면 닫는다.** `/pr`(같은 infra 정본 스킬)이 PR 본문에 `close #N` 을 박아 머지 시 GitHub 가 연결 이슈를 자동으로 닫는다. 그런데 브랜치명에서 이슈 번호 추출이 실패해 키워드가 안 박혔거나(주된 사각), 머지 후 누가 이슈를 다시 열었거나 하면 머지됐는데도 이슈가 open 으로 남는다. 워크트리를 제거하기 전(아직 `$BR` 이 유효한 시점)에 이 누락을 점검해 **사용자 동의 후** 닫는다. 후속 작업 때문에 일부러 열어둔 이슈를 자동으로 닫지 않도록 닫기 전 확인을 거친다(머지+clean 이 확인된 뒤에만 점검한다 — 미머지 브랜치의 이슈는 건드리지 않는다). 단 브랜치명에 번호가 없고 PR 본문에도 `close` 키워드가 없으면 어느 이슈와 엮였는지 추적할 단서가 없어 이 점검도 못 잡는다 — 연결 정보 자체가 없는 한계다.
 - **`/clear` 는 자동 호출 불가.** 스킬은 빌트인 슬래시 커맨드를 못 부른다(claude-code-guide 확인). 정리 후 사용자에게 `/clear` 입력을 안내하는 것으로 끝낸다.
@@ -28,6 +31,7 @@
 CUR=$(git rev-parse --show-toplevel)
 MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')
 BR=$(git rev-parse --abbrev-ref HEAD)
+echo "CUR=$CUR MAIN=$MAIN BR=$BR"   # 뒤 블록은 별도 bash 호출이라 이 값을 인라인으로 다시 쓴다
 ```
 
 - `CUR == MAIN` → 작업 워크트리에 안 들어가 있음(메인). **제거할 게 없다** → `### 3` 안내로 바로 간다.
@@ -84,21 +88,41 @@ gh pr list --head "$BR" --state merged --json number,headRefName,headRefOid \
      SLUG=$(basename "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")")_$(git branch --show-current | tr '/' '_')
      rm -f /tmp/pr_body_"$SLUG".md /tmp/nb_*_"$SLUG".json 2>/dev/null
      ```
-  3. `ExitWorktree({action: "remove"})` 를 호출한다.
-  4. **거부하면 사유를 읽고 갈린다.** 두 거부는 뜻이 정반대라 같이 다루면 안 된다.
-     - **변경 목록을 돌려주는 거부** — clean 은 이미 확인했으니 그 목록은 **squash·rebase 머지 커밋(base 브랜치의 ancestor 가 아닌 것)** 인 false alarm 이다. 이때만 `ExitWorktree({action: "remove", discard_changes: true})` 로 재호출한다. (clean 과 머지(`headRefOid` == 현재 HEAD)를 확인하기 **전에는 절대** `discard_changes: true` 를 주지 않는다 — 특히 "머지 이후 새 커밋" 케이스에서는 그 커밋이 진짜 유실된다.)
-     - **"not the owner of the worktree" 거부**: 이 세션이 만든 자리가 아니라 `EnterWorktree({path})` 로 들어간 자리다. **여기서 멈춘다.** `ExitWorktree({action: "keep"})` 로 나온 뒤 사실 그대로 알린다: "이 세션이 만든 worktree 가 아니라 제거하지 않았다. 지우려면 `git -C <repo> worktree remove <경로> && git -C <repo> branch -D <브랜치>`". **아래 5번 fallback 을 타지 않는다.** 거부 우회가 곧 남의 작업 공간을 지우는 경로다.
-  5. ExitWorktree 가 **no-op** 이라고 하면(이번 세션에 `EnterWorktree` 이력이 없음: 세션을 처음부터 그 워크트리 안에서 시작한 경우), **fallback** 으로 메인에서 ref 연산한다. 단 **지금 자리가 이 스킬이 만드는 자리일 때만** 한다:
+  3. **다른 세션이 이 워크트리를 쓰고 있는지 본다.** `ExitWorktree` 의 소유 판정은 이것을 말해 주지 않는다(이 세션의 도구가 만든 자리인지만 본다). 세션 레지스트리에서 살아 있는 다른 세션의 cwd 를 대조한다:
+     ```bash
+     CUR=$(git rev-parse --show-toplevel)
+     for f in "$HOME"/.claude/sessions/*.json; do
+       [ -f "$f" ] || continue
+       IFS=$'\t' read -r pid sid cwd < <(jq -r '[.pid, .sessionId, .cwd] | @tsv' "$f" 2>/dev/null)
+       [ "$sid" = "${CLAUDE_CODE_SESSION_ID:-}" ] && continue   # 이 세션 자신
+       kill -0 "$pid" 2>/dev/null || continue                   # 죽은 세션이 남긴 파일
+       case "$cwd" in "$CUR"|"$CUR"/*) echo "다른 세션(pid $pid, $sid)이 이 워크트리를 쓰고 있다 - 제거하지 않는다"; exit 1 ;; esac
+     done
+     echo "다른 세션 없음"
+     ```
+     다른 세션이 있으면 **여기서 멈춘다.** `ExitWorktree({action: "keep"})` 로 나온 뒤 그 사실을 알린다.
+  4. `ExitWorktree({action: "remove"})` 를 호출한다. 성공하면 `### 3` 으로 간다.
+  5. **거부하면 사유를 읽고 갈린다.**
+     - **변경 목록을 돌려주는 거부** — clean 은 이미 확인했으니 그 목록은 **squash·rebase 머지 커밋(base 브랜치의 ancestor 가 아닌 것)** 인 false alarm 이다. 이때만 `ExitWorktree({action: "remove", discard_changes: true})` 로 재호출한다. (clean 과 머지(`headRefOid` == 현재 HEAD)를 확인하기 **전에는** `discard_changes: true` 를 주지 않는다 — 특히 "머지 이후 새 커밋" 케이스에서는 그 커밋이 진짜 유실된다.)
+     - **"not the owner of the worktree" 거부** — `/issue` 로 만든 자리의 정상 경로다(위 원칙). 남의 자리 신호가 아니므로 멈추지 않고 6 의 fallback 으로 간다. 먼저 `ExitWorktree({action: "keep"})` 로 나온다. 세션이 로비나 메인 체크아웃으로 돌아오고 워크트리 격리가 풀려 `git -C` 가 허용된다.
+  6. **fallback: git 으로 직접 지운다.** 지금 자리가 이 스킬이 만드는 자리(`$MAIN/.claude/worktrees/*`)일 때만 한다. 별도 bash 호출이라 `$CUR`·`$MAIN` 은 1 에서 echo 한 값을 인라인한다:
      ```bash
      case "$CUR" in
        "$MAIN"/.claude/worktrees/*) ;;   # 이 스킬·/issue 가 만드는 자리 (제거 대상)
        *) echo "이 스킬이 만든 자리가 아니다 ($CUR). 제거하지 않는다. 필요하면 직접 git worktree remove."; exit 1 ;;
      esac
      ```
-     통과하면 아래가 이 스킬의 **마지막 bash 호출**이어야 한다(`$CUR` 삭제 시 cwd 가 사라짐. 세 명령 모두 `-C "$MAIN"` 이라 cwd 비의존):
-     ```bash
-     git -C "$MAIN" worktree remove "$CUR" && git -C "$MAIN" branch -D "$BR" && git -C "$MAIN" worktree prune
-     ```
+     통과하면 세션 상태에 따라 갈린다.
+     - **5 에서 `keep` 으로 나온 경우** (세션을 워크트리 밖에서 시작해 `path` 로 들어온 경우): 별도 bash 호출이라 `$MAIN`·`$CUR`·`$BR` 은 1 에서 echo 로 남긴 값을 인라인한다.
+       ```bash
+       git -C "$MAIN" worktree remove "$CUR" && git -C "$MAIN" branch -D "$BR" && git -C "$MAIN" worktree prune
+       ```
+       `git worktree remove` 가 `cannot remove a locked working tree, lock reason: ...` 로 거부하면 살아 있는 다른 세션이 도구로 만든 자리다. **멈추고 사유를 그대로 알린다.** `-f -f` 로 넘지 않는다.
+     - **ExitWorktree 가 no-op 인 경우** (세션을 처음부터 그 워크트리 안에서 시작해 `EnterWorktree` 이력이 없음): 세션이 워크트리 격리 상태라 `git -C "$MAIN"` 은 가드가 거부한다(실측). 자기 자리 제거는 격리 안에서도 된다(실측):
+       ```bash
+       git worktree remove "$CUR"
+       ```
+       이것이 이 스킬의 **마지막 bash 호출**이다(cwd 가 사라진다). 브랜치 `$BR` 은 이 세션에서 지울 수 없으니 남겨 두고, 보고에 정리 명령을 적는다: `git -C <repo> branch -D <브랜치> && git -C <repo> worktree prune` (로비·메인 세션에서 실행. `/session-check all` 도 안내한다).
 
 ### 3. /clear 안내
 
