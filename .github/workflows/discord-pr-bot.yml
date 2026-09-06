@@ -2,7 +2,10 @@
 # (uses: TeamPiKi/infra/.github/workflows/discord-pr-bot.yml@main + secrets: inherit).
 # @main 참조는 blocks 와 같은 SSOT 선택 — 이 파일 머지 즉시 전 소비 repo 에 반영된다.
 #
-# 변화 축은 caller 소유다: 이벤트 구독(ready_for_review vs reopened)·push 경보 유무는 caller 트리거가
+# 이 파일은 PR 이벤트 알림(notify-discord)만 담는다. main 직접 푸시 경보는 discord-direct-push.yml,
+# 스레드 백필은 discord-backfill.yml 로 분리했다 — 한 파일에 두면 pull_request 로 호출된 run 의 체크 목록에
+# push·dispatch 전용 job 이 매번 skipped 로 남기 때문이다.
+# 변화 축은 caller 소유다: 이벤트 구독(ready_for_review vs reopened)은 caller 트리거가
 # 가르고(안 구독한 이벤트의 분기는 그냥 안 탄다), 레이스 방지 concurrency 는 호출 run 의 속성이라 caller 에
 # 두며, 채널·봇 토큰·유저맵은 각 repo secret 이 가른다(secrets: inherit — PR 채널이 repo 마다 달라도 된다).
 # 이 본문은 backend(core) 계보와 client 계보의 합집합이다: reopen 스레드 복구·`## 작업 요약` 파서·
@@ -543,126 +546,3 @@ jobs:
               --data "$(jq -n --arg name "$NEW_NAME" '{name:$name, archived:true, locked:false}')")
             [ "$CODE" = "200" ] && echo "스레드 정리됨: $NEW_NAME" || echo "::warning::스레드 정리 실패 (HTTP $CODE)"
           fi
-
-  alert-direct-push:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    # 이 커밋의 PR 조회만 함 = pull-requests read.
-    permissions:
-      pull-requests: read
-    env:
-      DISCORD_USER_MAP: ${{ secrets.DISCORD_USER_MAP }}
-      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-      DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_PR_CHANNEL_ID }}
-      DISCORD_API: https://discord.com/api/v10
-      REPO_NAME: ${{ github.event.repository.name }}
-    steps:
-      - name: Check if direct push (not a PR merge)
-        id: check
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          # 이 push 커밋과 연결된 PR 을 직접 조회한다. closed PR 20건 윈도우 스캔은 머지 직후 다른 PR 업데이트에 밀려
-          # 대상 PR 을 놓쳐 정상 머지를 "직접 푸시"로 오분류(@here 오탐)할 수 있다. commits/{sha}/pulls 는 그 커밋의 PR 을 바로 준다.
-          # 조회 실패(401/403/rate limit 등)를 pr_count=0 으로 흘리면 정상 머지를 직접푸시로 오인해 @here 를 쏜다.
-          # HTTP 200 이 아니면 알림을 생략(fail-safe)한다 — pr_count=skip 은 아래 알림 스텝의 '== 0' 조건에 안 걸린다.
-          HTTP_CODE=$(curl -s -o /tmp/pr_list.json -w '%{http_code}' \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls") || HTTP_CODE="000"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "commits/{sha}/pulls 조회 실패 (HTTP $HTTP_CODE) — 직접푸시 오탐 방지 위해 알림 생략"
-            echo "pr_count=skip" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          PR_COUNT=$(jq 'if type=="array" then length else 0 end' /tmp/pr_list.json)
-          echo "pr_count=$PR_COUNT" >> "$GITHUB_OUTPUT"
-
-      - name: Send Discord alert
-        if: steps.check.outputs.pr_count == '0'
-        shell: bash
-        run: |
-          [ -n "$DISCORD_USER_MAP" ] || DISCORD_USER_MAP='{}'
-
-          PUSHER="${{ github.actor }}"
-          DISCORD_ID=$(echo "$DISCORD_USER_MAP" | jq -r --arg login "$PUSHER" '.[$login] // empty')
-          if [ -n "$DISCORD_ID" ]; then PUSHER_MENTION="<@$DISCORD_ID>"; else PUSHER_MENTION="$PUSHER"; fi
-
-          COMMIT_MSG=$(jq -r '.head_commit.message // ""' "$GITHUB_EVENT_PATH" | head -n 1)
-          SHORT_SHA="${{ github.sha }}"; SHORT_SHA="${SHORT_SHA:0:7}"
-          COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
-
-          SOUNDS=("비상비상 애옹애옹 🐱" "비상비상 멍멍멍멍 🐶" "비상비상 크르르릉~~~!!! 🐯" "비상비상 꽥꽥꽥꽥 🦆" "비상비상 어흥어흥!!! 🦁" "비상비상 뀨뀨뀨뀨 🐹" "비상비상 히이이잉~~~ 🐴" "비상비상 총총총총 🐰")
-          SOUND="${SOUNDS[$RANDOM % ${#SOUNDS[@]}]}"
-
-          # @here(=@everyone) 핑은 allowed_mentions 에 everyone·users 를 열어야 실제로 간다.
-          TEXT=$(printf '@here 🚨🚨🚨 %s 님이 %s main에 **직접 푸시** 했어요!!\n%s\n\n• **커밋**: [%s](%s)\n• **메시지**: %s' \
-            "$PUSHER_MENTION" "$REPO_NAME" "$SOUND" "$SHORT_SHA" "$COMMIT_URL" "$COMMIT_MSG")
-
-          RESP=$(curl -s -X POST "$DISCORD_API/channels/$DISCORD_CHANNEL_ID/messages" \
-            -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
-            -H "Content-Type: application/json; charset=utf-8" \
-            --data "$(jq -n --arg content "$TEXT" '{content:$content, allowed_mentions:{parse:["everyone","users"]}}')")
-          OK=$(echo "$RESP" | jq -r '.id // empty')
-          if [ -z "$OK" ]; then
-            echo "Discord post failed: $RESP"; exit 1
-          fi
-
-  backfill-threads:
-    # 기존 PR 스레드를 현재 정책으로 일괄 통일하는 수동 백필. Actions → Run workflow.
-    #  - 열린 PR:        unarchive + 팀원(DISCORD_USER_MAP) 전원 스레드 멤버 추가(사이드바 노출)
-    #  - 머지된 PR:      이름에 ✅ 프리픽스 + archived(닫힘). lock 은 안 함(글 쓰기 가능)
-    #  - 머지 없이 닫힘: 이름에 🗑️ 프리픽스 + archived
-    # 과거 find_meta 버그(#674 이전)로 close 정리가 스킵돼 안 닫힌 스레드까지 소급 정리한다. 멱등(재실행 안전).
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: read
-      issues: read
-    env:
-      DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-      DISCORD_USER_MAP: ${{ secrets.DISCORD_USER_MAP }}
-      DISCORD_API: https://discord.com/api/v10
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REPO: ${{ github.repository }}
-      REPO_NAME: ${{ github.event.repository.name }}
-    steps:
-      - name: Backfill existing PR threads (members + close state)
-        shell: bash
-        run: |
-          [ -n "$DISCORD_USER_MAP" ] || DISCORD_USER_MAP='{}'
-          # 최근 100개 PR(열림+닫힘). 스레드 메타가 있는 PR 만 처리한다.
-          PRS=$(gh api "repos/$REPO/pulls?state=all&per_page=100&sort=updated&direction=desc")
-          echo "$PRS" | jq -c '.[] | {num:.number, title:.title, state:.state, merged:(.merged_at != null)}' | while read -r pr; do
-            NUM=$(echo "$pr" | jq -r '.num')
-            TITLE=$(echo "$pr" | jq -r '.title')
-            STATE=$(echo "$pr" | jq -r '.state')
-            MERGED=$(echo "$pr" | jq -r '.merged')
-            # 메타 주석에서 thread_id (find_meta 와 같은 JSON 마커 매칭)
-            COMMENTS=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/issues/$NUM/comments")
-            META=$(echo "$COMMENTS" | jq -r '.[]? | objects | select((.body // "") | test("discord-pr-bot:\\s*\\{")) | .body' | tail -n 1)
-            THREAD_ID=$(echo "$META" | grep -oP 'discord-pr-bot:\s*\K\{[^}]*\}' | jq -r '.thread_id // empty' 2>/dev/null || true)
-            if [ -z "$THREAD_ID" ]; then echo "PR #$NUM: 스레드 메타 없음, skip"; continue; fi
-            if [ "$STATE" = "open" ]; then
-              # 열린 PR: 열림 유지 + 팀원 전원 추가
-              curl -s -o /dev/null -X PATCH "$DISCORD_API/channels/$THREAD_ID" \
-                -H "Authorization: Bot $DISCORD_BOT_TOKEN" -H "Content-Type: application/json; charset=utf-8" \
-                --data '{"archived":false}'
-              echo "$DISCORD_USER_MAP" | jq -r '.[]?' | while read -r uid; do
-                [ -z "$uid" ] && continue
-                curl -s -o /dev/null -X PUT "$DISCORD_API/channels/$THREAD_ID/thread-members/$uid" \
-                  -H "Authorization: Bot $DISCORD_BOT_TOKEN"
-              done
-              echo "PR #$NUM (open): 팀원 추가 + 열림"
-            else
-              # 닫힘: 결과 프리픽스 + archived(닫힘), lock 안 함
-              if [ "$MERGED" = "true" ]; then PREFIX="✅"; else PREFIX="🗑️"; fi
-              NEW_NAME=$(printf '%s PR %s#%s %s' "$PREFIX" "$REPO_NAME" "$NUM" "$TITLE" | cut -c1-90)
-              CODE=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH "$DISCORD_API/channels/$THREAD_ID" \
-                -H "Authorization: Bot $DISCORD_BOT_TOKEN" -H "Content-Type: application/json; charset=utf-8" \
-                --data "$(jq -n --arg name "$NEW_NAME" '{name:$name, archived:true, locked:false}')")
-              echo "PR #$NUM ($PREFIX 닫힘): HTTP $CODE"
-            fi
-          done

@@ -12,160 +12,23 @@
 # (classic PAT: project + repo 스코프. private repo 를 보드에 넣으려면 repo 필수) 을 쓴다.
 # PROJECT_TOKEN 미설정 repo 에서는 각 job 이 경고 후 성공 종료(skip) — caller 가 시크릿보다 먼저
 # 머지돼도 CI 가 빨갛게 되지 않는다. fork PR 은 secrets 가 비어 같은 경로로 skip 된다.
-# 이슈 작성자 자동 할당만은 repo 안 작업이라 GITHUB_TOKEN 으로 돈다 (caller 가 issues:write 전달).
+# 이슈 작성자 자동 할당(project-board-issues.yml)만은 repo 안 작업이라 GITHUB_TOKEN 으로 돈다 (caller 가 issues:write 전달).
 name: Project Board Sync
 
-# workflow_call 이 정본 계약이고, issues·pull_request 직접 트리거는 infra 자신의 caller 겸용이다 —
+# workflow_call 이 정본 계약이고, pull_request 직접 트리거는 infra 자신의 caller 겸용이다 —
 # 소비 repo 와 달리 infra 는 정본과 같은 repo 라 얇은 caller 파일을 따로 두지 않는다.
+# 이슈 오픈 축(issue-to-board·issue-auto-assign)은 project-board-issues.yml 로 분리했다 — 한 파일에 두면
+# pull_request 로 호출된 run 의 체크 목록에 issues 전용 job 이 매번 skipped 로 남기 때문이다.
 on:
   workflow_call:
     secrets:
       PROJECT_TOKEN:
         description: 조직 보드 쓰기 PAT (project + repo 스코프). 미전달이면 보드 동기화가 경고 후 skip 된다.
         required: false
-  issues:
-    types: [opened]
   pull_request:
     types: [opened, closed]
 
 jobs:
-  # 이슈 오픈 → 보드 등록 + 이슈 본문의 시작일/마감일/우선순위를 보드 필드로.
-  # 날짜·우선순위 섹션(### 시작일 등)이 없는 본문이면 보드 등록만 하고 필드는 건드리지 않는다.
-  issue-to-board:
-    if: github.event_name == 'issues' && github.event.action == 'opened'
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    permissions: {}
-    steps:
-      - name: Add to Project & Set Dates
-        env:
-          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
-          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::PROJECT_TOKEN 미설정 — 보드 동기화를 건너뜁니다 (repo secret 에 PROJECT_TOKEN 등록 필요)."
-            exit 0
-          fi
-
-          # 프로젝트 ID 조회
-          PROJECT_ID=$(gh api graphql -f query='{
-            organization(login: "${{ github.repository_owner }}") {
-              projectV2(number: 1) { id }
-            }
-          }' --jq '.data.organization.projectV2.id')
-          if [ -z "$PROJECT_ID" ] || [ "$PROJECT_ID" = "null" ]; then
-            echo "::error::Project 동기화 중단: PROJECT_ID 조회 실패 — 프로젝트 접근 권한(PROJECT_TOKEN)과 보드 번호를 확인하세요."
-            exit 1
-          fi
-
-          # 이슈를 프로젝트에 추가하고 item ID 획득
-          ITEM_ID=$(gh api graphql \
-            -f query='mutation($pid:ID!,$cid:ID!) {
-              addProjectV2ItemById(input:{projectId:$pid,contentId:$cid}) {
-                item { id }
-              }
-            }' \
-            -f pid="$PROJECT_ID" \
-            -f cid="$ISSUE_NODE_ID" \
-            --jq '.data.addProjectV2ItemById.item.id')
-
-          echo "Added to project. Item ID: $ITEM_ID"
-
-          # 프로젝트 필드 ID 조회 (날짜, 우선순위)
-          FIELDS=$(gh api graphql -f query='{
-            organization(login: "${{ github.repository_owner }}") {
-              projectV2(number: 1) {
-                fields(first: 30) {
-                  nodes {
-                    ... on ProjectV2Field { id name dataType }
-                    ... on ProjectV2SingleSelectField { id name options { id name } }
-                  }
-                }
-              }
-            }
-          }' --jq '.data.organization.projectV2.fields.nodes')
-
-          START_FIELD=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Start date" and .dataType == "DATE") | .id')
-          DUE_FIELD=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Target date" and .dataType == "DATE") | .id')
-          PRIORITY_FIELD_ID=$(echo "$FIELDS" | jq -r '.[] | select(.name == "Priority") | .id')
-          echo "START_FIELD=$START_FIELD DUE_FIELD=$DUE_FIELD PRIORITY_FIELD_ID=$PRIORITY_FIELD_ID"
-          if [ -z "$START_FIELD" ] || [ -z "$DUE_FIELD" ] || [ -z "$PRIORITY_FIELD_ID" ]; then
-            echo "::error::Project 동기화 중단: 필드 ID 조회 실패 (Start date / Target date / Priority) — 보드 필드 구성을 확인하세요."
-            exit 1
-          fi
-
-          # 이슈 본문에서 날짜 파싱 (MMDD → YYYY-MM-DD 자동 변환, YYYY-MM-DD / YYYYMMDD도 허용)
-          CURRENT_YEAR=$(date +%Y)
-          normalize_date() {
-            local raw
-            raw=$(echo "$1" | grep -A3 "^### $2" | grep -E "^[0-9]+" | head -1 | tr -d '[:space:]')
-            if [[ "$raw" =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})$ ]]; then
-              echo "$raw"
-            elif [[ "$raw" =~ ^([0-9]{4})([0-9]{2})([0-9]{2})$ ]]; then
-              echo "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}"
-            elif [[ "$raw" =~ ^([0-9]{2})([0-9]{2})$ ]]; then
-              # 연말 롤오버: 12월에 적은 "0110" 이 올해 1월(과거)로 저장되지 않게, 산출일이
-              # 6개월 이상 과거면 다음 해로 본다 (KST 어긋남 사고와 같은 timeline 역행 계열).
-              local candidate="${CURRENT_YEAR}-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
-              if [[ $(date -d "$candidate" +%s) -lt $(date -d "-6 months" +%s) ]]; then
-                candidate="$((CURRENT_YEAR + 1))-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
-              fi
-              echo "$candidate"
-            fi
-          }
-          START_DATE=$(normalize_date "$ISSUE_BODY" "시작일")
-          DUE_DATE=$(normalize_date "$ISSUE_BODY" "마감일")
-          echo "START_DATE=$START_DATE DUE_DATE=$DUE_DATE"
-
-          # 우선순위 파싱
-          PRIORITY_LABEL=$(echo "$ISSUE_BODY" | grep -A3 "^### 우선순위" | grep -vE "^###|^$" | head -1 | tr -d '[:space:]')
-          PRIORITY_OPTION_ID=$(echo "$FIELDS" | jq -r --arg p "$PRIORITY_LABEL" '.[] | select(.name == "Priority") | .options[]? | select(.name == $p) | .id')
-          echo "PRIORITY=$PRIORITY_LABEL PRIORITY_OPTION_ID=$PRIORITY_OPTION_ID"
-
-          update_field() {
-            local fid=$1 val_key=$2 val=$3
-            [[ -z "$fid" || -z "$val" ]] && return
-            gh api graphql \
-              -f query="mutation(\$pid:ID!,\$iid:ID!,\$fid:ID!,\$val:$4!) {
-                updateProjectV2ItemFieldValue(input:{projectId:\$pid,itemId:\$iid,fieldId:\$fid,value:{$val_key:\$val}}) {
-                  projectV2Item { id }
-                }
-              }" \
-              -f pid="$PROJECT_ID" -f iid="$ITEM_ID" -f fid="$fid" -f val="$val"
-          }
-
-          update_field "$START_FIELD"        "date"                   "$START_DATE"          "Date"
-          update_field "$DUE_FIELD"          "date"                   "$DUE_DATE"            "Date"
-          update_field "$PRIORITY_FIELD_ID"  "singleSelectOptionId"   "$PRIORITY_OPTION_ID"  "String"
-
-          # bash -e 환경에서 `[[ ]] && echo` 는 조건이 false 일 때 exit 1 을 유발하므로 if/fi 사용
-          if [[ -n "$START_DATE" ]];        then echo "Start date set: $START_DATE"; fi
-          if [[ -n "$DUE_DATE" ]];          then echo "Due date set: $DUE_DATE"; fi
-          if [[ -n "$PRIORITY_OPTION_ID" ]]; then echo "Priority set: $PRIORITY_LABEL"; fi
-
-  # 이슈 오픈 → assignee 비어 있으면 작성자를 할당. 보드가 아닌 repo 안 작업이라 GITHUB_TOKEN 으로 충분.
-  issue-auto-assign:
-    if: github.event_name == 'issues' && github.event.action == 'opened'
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    permissions:
-      issues: write
-    steps:
-      - name: Auto-assign creator if no assignee
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ASSIGNEES: ${{ toJson(github.event.issue.assignees) }}
-          CREATOR: ${{ github.event.issue.user.login }}
-        run: |
-          if echo "$ASSIGNEES" | jq -e 'length == 0' > /dev/null; then
-            gh issue edit "$ISSUE_NUMBER" \
-              --add-assignee "$CREATOR" \
-              --repo ${{ github.repository }}
-            echo "Auto-assigned to creator: $CREATOR"
-          fi
-
   # PR 오픈/머지 → 본문 close 참조(같은 repo 의 #N)가 가리키는 이슈의 보드 Status 를
   # In review / Done 으로 전이. 머지 아닌 close 는 건드리지 않는다.
   pr-linked-issue-status:
