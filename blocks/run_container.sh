@@ -13,7 +13,7 @@
 # 사용 예:
 #   run_container.sh --name piki-extractor --image <user>/piki-extractor:abc123 \
 #     --restart unless-stopped --publish 8090:8090 --env-file /tmp/app.env --pull --replace
-#   run_container.sh --name team3-green --image <user>/piki-core:abc123 \
+#   run_container.sh --name piki-core-green --image <user>/piki-core:abc123 \
 #     --restart unless-stopped --publish 127.0.0.1:8081:8080 --env-file /tmp/app.env --pull
 #
 # 인자:
