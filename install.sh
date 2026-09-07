@@ -151,10 +151,16 @@ register_session_hooks() {
   tmp=$(mktemp)
   if jq --arg emit "$HOME/.claude/hooks/session-title-emit.sh" \
         --arg assets "$HOME/.claude/hooks/ensure-assets.sh" '
-        def ensure($event; $cmd):
+        def ensure($event; $cmd; $timeout):
           if [.hooks[$event][]?.hooks[]?.command] | index($cmd) then .
-          else .hooks[$event] = ((.hooks[$event] // []) + [{hooks: [{type: "command", command: $cmd, timeout: 10}]}])
+          else .hooks[$event] = ((.hooks[$event] // []) + [{hooks: [{type: "command", command: $cmd, timeout: $timeout}]}])
           end;
+        # 예전 등록(PreToolUse Bash 의 ensure-assets)을 뺀다. 경로가 같아 unregister_hook 으론 새 등록까지 지워진다.
+        def drop_matched($event; $matcher; $cmd):
+          .hooks[$event] |= (if . == null then null else
+            (map(if .matcher == $matcher then .hooks |= map(select(.command != $cmd)) else . end)
+             | map(select((.hooks | length) > 0))) end)
+          | .hooks |= with_entries(select(.value != null and (.value | length) > 0));
         # 중복 판정을 같은 matcher 그룹 안으로 한정한다. 이벤트 전체에서 찾으면 matcher 를 하나 더
         # 붙이는 변경이 "이미 있다"로 오인돼 조용히 누락된다.
         def ensure_matched($event; $matcher; $cmd):
@@ -162,9 +168,10 @@ register_session_hooks() {
           else .hooks[$event] = ((.hooks[$event] // []) + [{matcher: $matcher, hooks: [{type: "command", command: $cmd, timeout: 20}]}])
           end;
         .hooks = (.hooks // {})
-        | ensure("UserPromptSubmit"; $emit)
+        | ensure("UserPromptSubmit"; $emit; 10)
+        | ensure("UserPromptSubmit"; $assets; 20)
         | ensure_matched("PostToolUse"; "EnterWorktree"; $assets)
-        | ensure_matched("PreToolUse"; "Bash"; $assets)
+        | drop_matched("PreToolUse"; "Bash"; $assets)
      ' "$settings" >"$tmp" 2>/dev/null && [ -s "$tmp" ] && jq -e . "$tmp" >/dev/null 2>&1; then
     mode=$(stat -f '%Lp' "$settings" 2>/dev/null || stat -c '%a' "$settings" 2>/dev/null || echo 644)
     install -m "$mode" "$tmp" "$settings"

@@ -12,29 +12,20 @@
 # 오진하기 쉽다 (TeamPiKi/core#950 작업 중 실제로 겪었다). 그 테스트는 파일이 없으면 skip 하지
 # 않고 일부러 실패시키므로 — 없다고 넘어가면 계약 강제가 조용히 사라진다 — 계속 같은 자리에서 걸린다.
 #
-# 왜 매 프롬프트가 아닌가: 평소 비용을 0 으로 두려고 **문제가 드러나는 두 순간에만** 건다.
-#   PostToolUse EnterWorktree      — 폴더가 바뀌는 그 순간이 곧 자산이 없어지는 순간이다.
-#   PreToolUse Bash(gradlew 포함)  — 위를 안 거치고 들어온 경우(수동 cd·resume 등)의 안전망.
+# 언제 도는가: **문제가 드러나는 두 순간**에 건다.
+#   PostToolUse EnterWorktree — 폴더가 바뀌는 그 순간이 곧 자산이 없어지는 순간이다.
+#   UserPromptSubmit          — 위를 안 거치고 들어온 경우(수동 cd·resume·다른 repo 세션)의 안전망.
+#                               매 프롬프트지만 정상 경로는 파일 존재 검사뿐이라 수 ms 다.
+# 예전엔 안전망을 PreToolUse Bash 중 gradlew 명령에만 걸었는데, 그러면 gradlew 를 안 쓰는
+# extractor·renderer 에선 워크트리 이동 없이 들어온 경우 영영 발동하지 않았다.
+#
+# 여기서는 **없는 파일만** 채운다. 낡은 파일 갱신은 SessionStart 가 sha 비교로 맡는다.
 #
 # 실패 안전: 어떤 이유로든 exit 0 한다. 자산을 못 깔아도 사용자의 명령을 막지 않는다.
 
 set -u
 
 payload=$(cat 2>/dev/null || true)
-
-# ---- B 트리거의 조기 종료: 프로세스를 하나도 안 띄우고 거른다 ----
-# PreToolUse 는 툴 이름(Bash)으로만 매칭되므로 ls·git status 같은 잦은 호출에도 전부 붙는다.
-# 그 대다수를 여기서 bash 내장 패턴 매칭만으로 끊는다 (jq 를 부르면 그것만으로 약 5ms 를 쓴다).
-# payload 전체를 문자열로 보는 게 정밀도는 낮지만, 여기서 통과해도 아래 sentinel 검사가 다시
-# 거르므로 과통과의 대가는 몇 ms 뿐이다. 반대로 과차단은 없다: 명령에 gradlew 가 있으면 반드시 남는다.
-case "$payload" in
-  *'"hook_event_name":"PreToolUse"'*)
-    case "$payload" in
-      *gradlew*) : ;;
-      *) exit 0 ;;
-    esac
-    ;;
-esac
 
 # ---- 작업 위치를 얻는다 ----
 # 훅 입력(JSON)의 cwd 를 쓰고, 없으면 프로세스 cwd 로 물러선다. jq 가 없는 환경도 마찬가지다.
@@ -65,9 +56,11 @@ done
 #
 # 소비 repo 판별은 CLAUDE.md 존재로 근사한다. install.sh 가 규약·카탈로그를 infra 자신에서 제외하는
 # 근거가 바로 "import 할 CLAUDE.md 가 없다" 이므로 같은 기준이고, origin 을 묻지 않아 프로세스도 안 뜬다.
+# 워크스페이스 루트(로비 규칙이 깔린 곳)는 규약·카탈로그를 일부러 안 깐다(install.sh 의 workspace 분기).
+# 그걸 "없다"로 읽으면 매 프롬프트마다 git 을 띄우므로 스킬만 본다.
 need=0
 [ -f "$root/.claude/commands/pr.md" ] || need=1
-if [ -f "$root/CLAUDE.md" ]; then
+if [ -f "$root/CLAUDE.md" ] && [ ! -f "$root/.claude/rules/piki-workspace.md" ]; then
   [ -f "$root/.claude/rules/testing-principles.md" ] || need=1
   [ -f "$root/shared-infra/contracts/extraction-error-codes.yaml" ] || need=1
 fi
