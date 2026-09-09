@@ -225,16 +225,13 @@ fi
 # 세션 훅·유틸은 사용자 전역 설정이라 repo 안에 둘 자리가 없다. 대신 repo 를 열 때마다 정본으로 맞춘다.
 claude_dir="$HOME/.claude"
 if [ -d "$claude_dir" ]; then
-  mkdir -p "$claude_dir/hooks" "$claude_dir/scripts" "$claude_dir/commands"
+  mkdir -p "$claude_dir/hooks" "$claude_dir/scripts"
   install_asset claude/hooks/session-title-emit.sh    "$claude_dir/hooks/session-title-emit.sh"    555 sh
   install_asset claude/hooks/session-title-compute.sh "$claude_dir/hooks/session-title-compute.sh" 555 sh
   install_asset claude/scripts/piki-worktrees.sh      "$claude_dir/scripts/piki-worktrees.sh"      555 sh
   # 자가치유. 이 설치기는 세션 시작 시점의 repo 한 곳에만 깔리므로, 세션 도중 다른 repo 를 만지는
   # 경로를 이 훅이 메운다. 소비 repo 의 settings 에 두면 그 repo 만 커버해서 홈에 둔다.
   install_asset claude/hooks/ensure-assets.sh         "$claude_dir/hooks/ensure-assets.sh"         555 sh
-
-  # 세션 관리는 repo 를 건드리지 않는 일이라 piki repo 밖에서도 필요하다. 그래서 전역에 깐다.
-  install_asset skills/retitle.md "$claude_dir/commands/retitle.md" 444 md
 
   register_session_hooks "$claude_dir/settings.json"
 fi
