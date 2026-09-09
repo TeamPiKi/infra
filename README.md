@@ -56,8 +56,8 @@ infra/
     run_container.test.sh
     alloy/       # 관측 수집기(Alloy) 공통 블록 (config.alloy·provision-alloy.sh·provision-alloy-ssm.sh)
   hooks/         # git hooks 정본 (commit-msg) — install.sh 가 각 repo 로 설치
-  skills/        # 스킬 정본 — install.sh 가 설치한다. repo 워크플로(commit·coderabbit·pr·issue·session-check·session-close)는
-                 # 각 repo(infra 자신 포함)의 .claude/commands 로, 세션 관리(retitle)는 repo 무관이라 ~/.claude/commands 로 간다
+  skills/        # 스킬 정본 (commit·coderabbit·pr·issue·session-check·session-close) — install.sh 가
+                 # 각 repo(infra 자신 포함)의 .claude/commands 로 설치한다
   workspace/     # 워크스페이스 루트(로비) 자산 정본 — install.sh 가 루트의 .claude/rules 로 설치
     piki-workspace.md  # 로비 규칙 (지도·hop 규칙·hop 후 차이). 루트 CLAUDE.md 의 import 가 있어야 로드된다
     workspace-init.sh       # 팀원 1회 부트스트랩 (루트 git init·.gitignore·settings.json·CLAUDE.md import·repo clone)
