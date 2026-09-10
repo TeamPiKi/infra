@@ -12,8 +12,6 @@
 - 타입과 콜론 사이 공백 없음, 콜론 뒤 공백 1개
 - 제목과 본문 사이 빈 줄 1개
 - 본문은 `-`로 시작하는 bullet point (선택사항). 문체·뎁스·라벨은 **개조식 규약(`.claude/rules/writing-style.md`)** 을 따른다. 본문을 쓰기 전에 읽는다. 파일이 없으면 infra 정본을 읽는다: `gh api -H "Accept: application/vnd.github.raw" repos/TeamPiKi/infra/contents/conventions/writing.md`. 규약 없이 본문을 쓰지 않는다
-- 언어: 한국어 권장, 기술 용어·고유명사는 영어 사용
-- 이모지 사용 금지
 - 제목은 "무엇을 변경했는가"를 쓴다. 형식은 개조식 규약 "제목" 절의 `대상 + 동작명사`(prefix 뒤). 변경의 동기(리뷰 반영, 요청사항 등)는 제목이 아닌 본문에 적는다
   - bad: `refactor: CodeRabbit 리뷰 반영`
   - good: `refactor: ProblemDetail 응답에서 내부 메시지 노출 제거`
