@@ -52,7 +52,7 @@ Epic 은 브랜치를 만들지 않고 상위 Epic 도 없다.
 - **무엇을** (목표 상태, 예상 범위)
 
 분해 룰 (다듬기 통합):
-- 표현 자연스럽게, 단답을 풍부한 문장으로 풀기 OK
+- 문체·뎁스·라벨은 개조식 규약(`.claude/rules/writing-style.md`)을 따른다. 단답은 불릿으로 구조화하되 문장으로 늘리지 않는다. 파일이 없으면 infra 정본을 읽는다: `gh api -H "Accept: application/vnd.github.raw" repos/TeamPiKi/infra/contents/conventions/writing.md`. 규약 없이 본문을 쓰지 않는다
 - 적절한 컨텍스트 추론 OK (예: "성능 개선" → "현재 X 처리가 느려 개선 필요")
 - ❌ 구체적 수치/날짜/외부 시스템·라이브러리/책임자 새로 만들어내기 금지
 - ❌ 사용자가 명시한 사실과 다른 내용 금지

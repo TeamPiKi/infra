@@ -44,6 +44,8 @@ infra/
     blocks.md    # 블록 작성 원칙 (실행위치 중립·값 미소유·종료코드·셀프검증)
     testing.md   # 테스트 컨벤션 원칙 (스택 무관 + JVM/Spring 공통) — install.sh 가 소비 repo 의
                  # .claude/rules/testing-principles.md 로 설치, 언어 바인딩은 각 repo 소유
+    writing.md   # 개조식 작성 규약 (commit·PR·issue 본문의 문체·뎁스·라벨) — install.sh 가 스킬이 깔리는 모든 곳
+                 # (소비 repo·infra 자신·워크스페이스 루트)의 .claude/rules/writing-style.md 로 설치, /commit·/pr·/issue 가 읽는다
   contracts/     # 서비스 간 계약 (판정 방식·규약)
     health.md    # 헬스체크 계약 (첫 통일 대상)
     observability.md  # 관측 계약 (Alloy 수집·라벨·로그 형식)
