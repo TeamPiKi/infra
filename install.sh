@@ -204,6 +204,11 @@ if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   install_asset conventions/testing.md "$rules_dir/testing-principles.md" 444 md
 fi
 
+# 개조식 규약은 코드가 아니라 /commit·/pr·/issue 스킬이 읽는다. 스킬은 무조건 설치되므로(로비 포함) 규약도 같이 간다.
+rules_dir="$repo_root/.claude/rules"
+mkdir -p "$rules_dir"
+install_asset conventions/writing.md "$rules_dir/writing-style.md" 444 md
+
 # 루트 CLAUDE.md 가 `@.claude/rules/piki-workspace.md` 로 import 해야 로드된다(실측).
 # 그 한 줄은 workspace/workspace-init.sh 가 만든다.
 if [ "$workspace" = 1 ]; then
