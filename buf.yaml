@@ -1,0 +1,19 @@
+# buf 설정. contracts/ 의 .proto 를 lint 하고, PR 에서 main 과 비교해 깨는 변경(번호 재사용·타입 변경·
+# 필드 삭제)을 막는다(ci.yml 의 contracts-proto job). 로컬에서는 `buf lint` / `buf breaking --against
+# '.git#branch=main'` 로 같은 검사를 돌릴 수 있다.
+version: v2
+modules:
+  - path: contracts
+lint:
+  use:
+    - STANDARD
+  except:
+    # enum 값 이름이 그대로 JSON 문자열로 나가는 계약이라(extraction.proto 머리말) 타입 접두사를 붙일 수 없다.
+    - ENUM_VALUE_PREFIX
+    # contracts/ 바로 아래 한 파일로 둔다. 경로가 install.sh 와 소비 repo CI 의 checkout 에 묶여 있어
+    # 패키지 계층(piki/extraction/v1/)을 디렉토리로 펼치지 않는다.
+    - PACKAGE_DIRECTORY_MATCH
+breaking:
+  use:
+    # WIRE_JSON: 바이너리와 JSON 양쪽의 와이어 호환을 검사한다. 필드명 변경도 JSON 에선 깨는 변경이라 잡힌다.
+    - WIRE_JSON

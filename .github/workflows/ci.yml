@@ -1,6 +1,6 @@
 name: ci
 
-# 두 job 모두 읽기 전용이다 - 토큰 범위를 최소화하고 checkout 의 자격증명 잔존도 끈다.
+# 세 job 모두 읽기 전용이다 - 토큰 범위를 최소화하고 checkout 의 자격증명 잔존도 끈다.
 permissions:
   contents: read
 
@@ -52,3 +52,22 @@ jobs:
 
       - name: Run workspace-init.sh self-test
         run: ./workspace/workspace-init.test.sh
+
+  # 추출 계약의 proto 정본(contracts/extraction.proto). lint 는 push·PR 모두, breaking 은 PR 에서만
+  # main 과 비교한다 — 번호 재사용·타입 변경·필드 삭제·(JSON 와이어의) 필드명 변경을 머지 전에 막는다.
+  contracts-proto:
+    name: contracts-proto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: true
+          format: true
+          breaking: ${{ github.event_name == 'pull_request' }}
+          breaking_against: 'https://github.com/${{ github.repository }}.git#branch=main'
+          push: false
+          archive: false

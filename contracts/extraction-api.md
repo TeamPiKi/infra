@@ -5,6 +5,10 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
 
 소비자는 core 의 파싱 워커 하나뿐이다. 공개 API 가 아니며 보안그룹으로 내부망에서만 접근한다(별도 인증 없음).
 
+**요청·응답의 모양(필드·타입·enum 이름)의 정본은 `contracts/extraction.proto`** 다(파일럿: link 경로).
+소비 repo 는 빌드 시점에 이 파일에서 클래스를 생성해 쓰고, 와이어는 protobuf 의 JSON 매핑이라 아래
+JSON 예시와 바이트 단위로 같다. 모양이 이 문서와 어긋나면 proto 가 옳다 — 이 문서는 의미를 맡는다.
+
 **code 목록의 정본은 `contracts/extraction-error-codes.yaml`** 이다. 이 문서는 각 code 가 무엇을
 뜻하는지를 맡고, 목록·disposition·bucket 은 그 파일이 갖는다(이중 관리 방지). 카탈로그에 있는데
 아래 표에 없는 code 가 보이면 카탈로그가 옳다 — 설명을 여기 보탠다.
@@ -246,8 +250,12 @@ recover 가 재시도한다. 그 사이 Extractor 가 계속 돌아 중복 발�
 
 - **additive-only**: 응답 필드 추가·422 code 추가는 자유. 필드 제거·의미 변경·타입 변경은 금지 —
   필요하면 새 경로로 분리한다.
-- **code 를 더하거나 고칠 때는 카탈로그(`extraction-error-codes.yaml`)를 먼저 고친다.** 소비 repo 의
-  메타 테스트가 카탈로그를 읽어 대조하므로, 구현만 고치면 그쪽이 빨간불이 된다 — 그게 이 배치의 목적이다.
+- **code 를 더하거나 고칠 때는 카탈로그(`extraction-error-codes.yaml`)와 `extraction.proto` 의 enum 을 함께
+  고친다.** 소비 repo 의 메타 테스트가 카탈로그를 읽어 대조하므로, 구현만 고치면 그쪽이 빨간불이 된다 —
+  그게 이 배치의 목적이다.
+- **모양을 바꿀 때는 `extraction.proto` 만 고친다.** 필드 추가는 번호를 새로 받고, 번호 재사용·타입 변경·
+  삭제·필드명 변경은 CI 의 `buf breaking` 이 막는다. 생성 클래스가 양쪽 코드를 따라오게 하므로 DTO 를 손으로
+  맞추는 단계가 없다.
 - **배포 순서: Extractor 먼저, 소비자(core) 나중.**
 - 호출자는 tolerant reader — 모르는 응답 필드·code 를 무시한다.
 
