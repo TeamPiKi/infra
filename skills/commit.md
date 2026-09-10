@@ -11,10 +11,10 @@
 
 - 타입과 콜론 사이 공백 없음, 콜론 뒤 공백 1개
 - 제목과 본문 사이 빈 줄 1개
-- 본문은 `-`로 시작하는 bullet point (선택사항)
+- 본문은 `-`로 시작하는 bullet point (선택사항). 문체·뎁스·라벨은 **개조식 규약(`.claude/rules/writing-style.md`)** 을 따른다. 본문을 쓰기 전에 읽는다. 파일이 없으면 infra 정본을 읽는다: `gh api -H "Accept: application/vnd.github.raw" repos/TeamPiKi/infra/contents/conventions/writing.md`. 규약 없이 본문을 쓰지 않는다
 - 언어: 한국어 권장, 기술 용어·고유명사는 영어 사용
 - 이모지 사용 금지
-- 제목은 "무엇을 변경했는가"를 쓴다. 변경의 동기(리뷰 반영, 요청사항 등)는 제목이 아닌 본문에 적는다
+- 제목은 "무엇을 변경했는가"를 쓴다. 형식은 개조식 규약 "제목" 절의 `대상 + 동작명사`(prefix 뒤). 변경의 동기(리뷰 반영, 요청사항 등)는 제목이 아닌 본문에 적는다
   - bad: `refactor: CodeRabbit 리뷰 반영`
   - good: `refactor: ProblemDetail 응답에서 내부 메시지 노출 제거`
 
@@ -22,10 +22,10 @@
 
 본문은 단순히 "무엇을 했는가"만 적지 말고, **그 결정에 어떻게 도달했는가**까지 담는다. 미래의 리뷰어·자기 자신이 commit 한 개로도 PR description 처럼 맥락을 잡을 수 있어야 한다.
 
-담을 만한 결정 흐름:
-- 선택지 사이에서 어느 쪽을 택한 이유
-- 처음 시도 → 전환한 흐름
-- 작업 중 발견한 함정·누락을 정정한 부수효과
+담을 만한 결정 흐름과 개조식 표현:
+- 선택지 사이에서 어느 쪽을 택한 이유: `원인`, 버린 쪽은 `대안` + `기각`
+- 처음 시도에서 전환한 흐름: 번호 목록
+- 작업 중 발견한 함정·누락을 정정한 부수효과: 별도 불릿 + `원인`
 
 **할루시네이션 금지.** 실제로 대화·작업에서 일어난 결정·트레이드오프·발견만 적는다. 추측·미래 의도·"AI 가 도왔다" 같은 메타정보는 적지 않는다.
 
@@ -33,8 +33,11 @@
 ```text
 refactor: DB schema squash 와 테이블명 복수형 통일
 
-- 처음엔 V1-V18 을 모두 삭제하는 squash 로 시도했으나, 운영 RDS 의 자동 마이그레이션 흐름을 보존하기 위해 drop_legacy_tables + create_init_schema 두 마이그레이션을 새로 추가하는 방식으로 전환
-- 작업 중 tournament_histories.tournament_id 가 풀스캔되던 인덱스 누락도 함께 정정
+- 마이그레이션 2개 추가: drop_legacy_tables · create_init_schema
+  - 대안: V1-V18 전체 삭제 squash
+    - 기각: 운영 RDS 자동 마이그레이션 흐름 보존 필요
+- tournament_histories.tournament_id 인덱스 추가
+  - 원인: 풀스캔
 ```
 
 ## 허용 타입
