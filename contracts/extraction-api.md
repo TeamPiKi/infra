@@ -160,32 +160,10 @@ link 와 같은 `UNTRUSTWORTHY_VALUE` 를 재사용한다.
 **일시 실패를 거절로 바꾸지 않는다.** 5xx·429·타임아웃을 422 로 내보내면 외부가 잠깐 흔들린 사이에
 멀쩡한 모델이 "쓸 수 없는 모델"로 판정돼 저장이 막힌다.
 
-## 3. code 의 의미
+## 3. code 의 분류
 
-목록·`disposition`·`bucket` 의 정본은 `contracts/extraction-error-codes.yaml` 이다. 아래는 각 code 가
-무엇을 가리키는지에 대한 설명이다.
-
-| code | 의미 |
-|---|---|
-| `NOT_PRODUCT_PAGE` | 상품 페이지가 아니다 - 읽어 보니 아니거나, 응답 Content-Type 이 영상·압축파일 등이라 애초에 페이지가 아니거나(후자는 본문을 읽지 않고 확정한다) |
-| `INVALID_URL` | url 형식·스킴 위반이거나, host 를 조회하지 못했다(DNS 응답 없음). 형식·스킴 위반은 호출자가 동기 검증하므로 정상 흐름에서 도달하지 않고(방어), 조회 실패는 등록 시점에 알 수 없어 추출에서 처음 드러난다. 없는 주소는 다시 물어도 없으므로 확정이며, 헤드리스 에스컬레이션 대상도 아니다 |
-| `EMPTY_SHELL` | fetch 는 2xx 지만 본문이 데이터 없는 CSR 셸(파싱 no-data 를 재분류). 헤드리스 에스컬레이션 대상이라, 헤드리스가 켜진 구성에선 헤드리스 결과가 대신 응답된다 |
-| `NO_EXTRACTABLE_CONTENT` | 본문에 가시 텍스트도 데이터 script 도 없어 LLM 을 부르지 않고 확정(빈 셸 환각 차단). plain 경로는 EMPTY_SHELL 재분류가 선행하므로 사실상 헤드리스 렌더 결과까지 셸일 때 나온다 |
-| `FETCH_CLIENT_ERROR` | 대상 4xx (403 차단·404·429 등). 봇 방어의 클로킹일 수 있다 |
-| `PERMANENT_UPSTREAM` | 대상 500/501 등 결정론적 재실패 5xx. 대형 몰은 상시 가용이라 대개 진짜 장애가 아니라 봇 방어다 |
-| `UNTRUSTWORTHY_VALUE` | 추출값이 범위·상식 위반이거나, 값을 하나도 못 채웠다(일부만 채운 결과는 실패가 아니라 200) |
-| `LLM_INVALID_RESPONSE` | 재시도해도 같은 LLM 실패(4xx·파싱 불가·정책 거부로 text part 없음) |
-| `IMAGE_UNSUPPORTED` | 이미지 경로 전용 — 빈 이미지·미지원 MIME |
-| `BLOCKED_HOST` | 사설·메타데이터·loopback 으로 resolve 되는 host 를 SSRF 로 차단. 헤드리스 에스컬레이션 절대 금지 대상 |
-| `TOO_MANY_REDIRECTS` | redirect 가 hop 상한을 넘어 무한·체인 의심 |
-| `MALFORMED_REDIRECT` | 3xx 를 주면서 Location 이 없거나 깨진 비정상 redirect |
-| `UPSTREAM_ERROR` | 대상 몰 502/503/504·연결 실패·빈 body |
-| `LLM_UPSTREAM` | Gemini 5xx/429/408/transport 오류 |
-| `HEADLESS_BLOCKED` | 실제 브라우저로도 차단(verdict=BLOCK). 렌더 서비스의 BLOCK 판정에는 429·일시 챌린지가 섞여 영구/일시를 못 가르므로 fail-safe 로 일시다. `HEADLESS_UPSTREAM` 과 code 를 나눈 이유는 대응이 달라서다(차단 추세 = 정책 후보, 장애 추세 = 렌더 박스 점검) |
-| `HEADLESS_UPSTREAM` | 렌더 서비스 연결 실패·타임아웃·빈 렌더(verdict=EMPTY)·브라우저 오류(verdict=ERROR)·압축 해제 실패. 렌더 서비스는 파싱하지 않으므로 HTML 이 있으면 verdict 와 무관하게 Extractor 파이프라인이 추출을 이어간다 |
-| `STORAGE_ERROR` | 이미지 경로 전용 — S3 read/write 실패 |
-| `MODEL_NOT_FOUND` | 프로브 전용 — 그런 모델이 없다(Gemini 404). 오타이거나 폐기돼 사라진 모델 |
-| `MODEL_INCOMPATIBLE` | 프로브 전용 — 모델은 있으나 그 경로의 요청을 처리하지 못한다. 요청 스키마 비호환(400)·결제 티어 제한, 200 을 주면서 응답 스키마를 못 맞춘 경우까지 포함 |
+각 code 가 무엇을 가리키는지는 `extraction.proto` 의 enum 값 주석이 정본이다. 목록과 `disposition`·
+`bucket` 은 `contracts/extraction-error-codes.yaml` 이 갖는다. 이 절은 bucket 축만 설명한다.
 
 ### bucket (확정 실패의 운영 분류)
 
