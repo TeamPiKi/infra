@@ -50,6 +50,7 @@ infra/
     health.md    # 헬스체크 계약 (첫 통일 대상)
     observability.md  # 관측 계약 (Alloy 수집·라벨·로그 형식)
     extraction-api.md            # 추출 API 계약 (core -> extractor: 요청·응답 3갈래·code 의미·타임아웃 예산)
+    extraction.proto             # 그 계약의 와이어 모양 정본 (소비 repo 가 빌드 시점에 클래스 생성, 파일럿: link)
     extraction-error-codes.yaml  # 추출 실패 code 카탈로그 (정본 데이터) — 소비 repo 메타 테스트가 읽어 대조
   blocks/        # 실행 위치 중립 공유 블록 (bash 스크립트 + 관측 설정)
     healthcheck.sh
