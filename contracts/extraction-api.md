@@ -54,18 +54,8 @@ JSON 예시와 바이트 단위로 같다. 모양이 이 문서와 어긋나면 
 { "url": "https://www.musinsa.com/products/12345", "authorized": false, "model": "gemini-3.1-flash-lite" }
 ```
 
-- `url` (필수): https 스킴의 상품 페이지 URL. 형식·스킴·미지원 플랫폼의 동기 검증은 호출자(core 등록
-  경계)가 이미 끝냈다는 전제이나, Extractor 도 자기 경계에서 방어 검증한다(다층 방어).
-- `authorized` (선택, 기본 false): 이 대상이 플랫폼의 명시적 허락을 받았는가. 판정의 단일 진실은 호출자
-  DB(백오피스)에 있고 무상태인 Extractor 는 요청 단위로만 받아 렌더 서비스까지 전달한다. **추출 경로는 이
-  값과 무관하게 같다** — 정적 fetch 로 시작해 필요하면 브라우저로 승격하는 흐름은 항상 동일하다. 이 값이
-  true 일 때 열리는 것은 렌더 서비스의 우회 수단(지문 보정·프록시)뿐이다. 생략·null 은 false(허락 없음)로
-  정규화되는 fail-safe 라, 이 필드를 모르는 구버전 호출자의 요청은 안전한 쪽으로만 어긋난다.
-- `model` (선택): 이 요청의 LLM 추출에 쓸 모델. authorized 와 같은 성질이다 — 정책의 단일 진실은
-  호출자 DB(백오피스)에 있고 Extractor 는 요청 단위로만 받는다. **요청 단위로 받는 이유**: Extractor
-  박스 한 대를 여러 환경이 공유하므로, 모델을 Extractor 환경변수로 잡으면 dev 에서 바꾼 것이 prod
-  파싱까지 덮는다. 생략·null·빈 문자열이면 Extractor 의 기본 모델을 쓴다 — 구버전 호출자의 요청이
-  그대로 동작하므로 배포 순서 무관.
+- **필드의 의미는 `extraction.proto` 의 주석이 정본이다.** 이 절은 필드가 아니라 그 위에서 도는 서비스
+  동작만 적는다. 아래 JSON 은 와이어 모양 예시다.
 - **지정 모델이 404 면 기본 모델로 대체하고 추출을 이어간다.** 등록 당시 유효했던 모델이 폐기돼 사라지는
   경우가 있고, 그때 파싱 전체가 죽는 것보다 기본 모델로 이어가는 편이 낫다(가용성 우선). 대체가 일어나도
   응답 모양은 같으며, 발생 사실은 Extractor 의 warn 로그와 `gemini.model.fallback` 카운터에만 남는다.
@@ -86,17 +76,8 @@ JSON 예시와 바이트 단위로 같다. 모양이 이 문서와 어긋나면 
 }
 ```
 
-- `finalUrl`: 리다이렉트를 따라간 최종 페이지 URL. 호출자가 상품 정체성(canonical) 정규화의 입력으로
-  쓴다 — 단축링크(onelink 등)는 경로가 불투명 코드라 이 값 없이 같은 상품을 알아볼 수 없다. link 경로는
-  항상 채워지고 image 경로는 null. 호출자는 이 값이 없으면(구버전 Extractor) canonical 확정을
-  건너뛴다 — 배포 순서 무관.
-- `method`: 값을 만든 추출 경로. `STRUCTURED`(구조화 파싱, 결정론적) | `LLM`(Gemini — URL fallback·image
-  경로). 호출자가 snapshot 출처(SERVER/SERVER_LLM)를 구분 저장하는 근거다. tolerant reader 라 모르는
-  값이 와도 무시하고 출처 미기록으로 둔다.
-- **값 필드는 전부 nullable 이고, Extractor 는 "하나라도 채웠다" 만 보장한다.** `name`(non-blank)·
-  `imageUrl`·`currentPrice` 중 **하나도 못 채웠을 때만** 422(`UNTRUSTWORTHY_VALUE`)이고, 일부만 채운
-  결과는 채운 값 그대로 200 이다. `currency` 는 단독으로 "채웠다" 의 근거가 되지 못한다(READY 필수가
-  아니라서다).
+- 구버전 Extractor 가 `finalUrl`·`method` 를 안 내려주면 호출자는 canonical 확정과 출처 기록을
+  건너뛴다 — 배포 순서 무관. 모르는 `method` 값도 무시한다(tolerant reader).
 - 세 필드는 여전히 core 의 READY 불변식(name·price·imageUrl·extractedAt, extractedAt 은 호출자가 전이
   시점에 채움)과 같은 집합이지만, **그 집합을 채우는 책임이 Extractor 단독에서 "Extractor 가 채운 만큼 +
   사용자가 나머지" 로 갈렸다.** 호출자는 부분값을 `INCOMPLETE` 상태로 받아 사용자 입력으로 완성한다

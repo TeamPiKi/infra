@@ -1,5 +1,6 @@
-// 모양만 갖는다. 필드의 의미는 extraction-api.md, 실패 code 의 분류는 extraction-error-codes.yaml 이 정본이다.
-// 필드명은 protobuf 의 JSON 매핑이 현행 JSON 과 같아지도록 골랐다 — 생성 클래스 소비자와 Jackson DTO 소비자가 섞여 돈다.
+// 추출 API 계약의 와이어 정본. 모양과 필드 의미 둘 다 이 파일이 갖는다.
+// 행동 계약(응답 3갈래·타임아웃 예산·진화 규칙)은 extraction-api.md, 실패 code 분류는 extraction-error-codes.yaml.
+// 필드명은 protobuf JSON 매핑이 현행 JSON 과 일치하도록 선택 - 생성 클래스 소비자와 Jackson DTO 소비자의 혼재 허용.
 
 syntax = "proto3";
 
@@ -9,28 +10,44 @@ option java_multiple_files = true;
 option java_package = "com.depromeet.piki.contracts.extraction.v1";
 
 message LinkExtractionRequest {
+  // 상품 페이지 URL. https 스킴 한정. 호출자 등록 경계의 검증 이후 Extractor 경계의 재검증 대상(다층 방어).
   string url = 1;
+  // 플랫폼의 명시적 허락 여부. 판정 원장은 호출자 DB, Extractor·렌더 서비스는 요청 단위 수신자.
+  // 여는 것은 렌더 서비스의 우회 수단(지문 보정·프록시)뿐. 추출 경로 자체는 이 값과 무관하게 동일.
+  // 생략은 false(허락 없음)로 정규화 - 이 필드를 모르는 구버전 호출자도 안전한 쪽으로만 어긋나는 fail-safe.
   bool authorized = 2;
+  // 이 요청의 LLM 추출에 쓸 모델. 정책 원장은 호출자 DB(백오피스).
+  // 요청 단위 수신의 이유는 박스 한 대의 환경 공유 - 환경변수 고정 시 dev 변경이 prod 파싱까지 덮는 사고.
+  // 생략·빈 문자열이면 Extractor 의 기본 모델.
   string model = 3;
 }
 
+// 값을 만든 추출 경로. 호출자의 snapshot 출처(SERVER/SERVER_LLM) 구분 근거.
 enum ExtractionMethod {
   EXTRACTION_METHOD_UNSPECIFIED = 0;
+  // 구조화 데이터(JSON-LD·OpenGraph) 파싱. 결정론적.
   STRUCTURED = 1;
+  // Gemini 추출. URL 경로의 fallback 과 image 경로.
   LLM = 2;
 }
 
-// optional 로 선언해 "안 채움"과 "0·빈 문자열"을 구분한다. 안 채운 필드는 JSON 에서 생략된다.
+// 성공 200 body. 값 필드는 전부 선택이고 보장은 name(non-blank)·image_url·current_price 중 하나 이상.
+// 하나도 못 채운 경우만 422 UNTRUSTWORTHY_VALUE, 일부만 채운 결과는 채운 값 그대로 200.
+// optional 선언의 이유는 "안 채움"과 "0·빈 문자열"의 구분. 안 채운 필드는 JSON 에서 생략.
 message ExtractionResult {
   optional string name = 1;
   optional string image_url = 2;
   optional int32 current_price = 3;
+  // ISO 4217. 단독으로는 "채웠다"의 근거에서 제외 - 호출자 READY 필수 집합 밖.
   optional string currency = 4;
+  // 리다이렉트 귀결점. 호출자의 상품 정체성(canonical) 정규화 입력.
+  // 단축링크는 경로가 불투명 코드라 이 값 없이 같은 상품 식별 불가. link 경로 필수, image 경로 없음.
   optional string final_url = 5;
   ExtractionMethod method = 6;
 }
 
-// 목록은 extraction-error-codes.yaml 과 1:1 이어야 한다(소비 repo 메타 테스트가 대조). 분류는 그 파일이 갖는다.
+// 확정 실패 code. 목록은 extraction-error-codes.yaml 과 1:1(소비 repo 메타 테스트가 대조).
+// 분류(disposition·bucket·scope·escalatable)의 정본은 그 파일.
 enum ExtractionErrorCode {
   EXTRACTION_ERROR_CODE_UNSPECIFIED = 0;
 
@@ -57,6 +74,7 @@ enum ExtractionErrorCode {
   MODEL_INCOMPATIBLE = 19;
 }
 
+// 확정 실패 422 body. 호출자의 전이 판정은 HTTP status 전용이고 code 는 관측·분류용.
 message ExtractionFailure {
   ExtractionErrorCode code = 1;
 }
