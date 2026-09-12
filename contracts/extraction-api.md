@@ -76,15 +76,6 @@ JSON 예시와 바이트 단위로 같다. 모양이 이 문서와 어긋나면 
 }
 ```
 
-- 구버전 Extractor 가 `finalUrl`·`method` 를 안 내려주면 호출자는 canonical 확정과 출처 기록을
-  건너뛴다 — 배포 순서 무관. 모르는 `method` 값도 무시한다(tolerant reader).
-- 세 필드는 여전히 core 의 READY 불변식(name·price·imageUrl·extractedAt, extractedAt 은 호출자가 전이
-  시점에 채움)과 같은 집합이지만, **그 집합을 채우는 책임이 Extractor 단독에서 "Extractor 가 채운 만큼 +
-  사용자가 나머지" 로 갈렸다.** 호출자는 부분값을 `INCOMPLETE` 상태로 받아 사용자 입력으로 완성한다
-  (TeamPiKi/core#944). 사진에 가격이 박혀 있지 않은 것은 정상 입력이라, 셋을 다 요구하면 "쇼핑몰 화면
-  캡처" 만 통과하는 계약이 되기 때문이다.
-- 호출자의 엔티티 불변식은 최후 보루로 유지된다 — READY 로 전이하는 값은 여전히 세 필드를 다 요구한다.
-
 확정 실패 422:
 
 ```json
