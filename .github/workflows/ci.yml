@@ -53,11 +53,8 @@ jobs:
       - name: Run workspace-init.sh self-test
         run: ./workspace/workspace-init.test.sh
 
-  # 추출 계약의 proto 정본(contracts/extraction.proto). lint·format 은 push·PR 모두, breaking 은 PR 에서만
-  # main 과 비교한다 — 번호 재사용·타입 변경·필드 삭제·(JSON 와이어의) 필드명 변경을 머지 전에 막는다.
-  # buf-action 의 통합 모드 대신 setup 만 쓰고 명령을 직접 부른다: 통합 모드는 PR 코멘트에 issues:write 를
-  # 요구하고(이 워크플로는 읽기 전용), main 에 .proto 가 하나도 없던 첫 도입 PR 에서 breaking 이 "비교 대상
-  # 모듈이 비었다"로 터진다 — 그 경우만 건너뛴다.
+  # buf-action 의 통합 모드 대신 setup 만 쓴다 - 통합 모드는 PR 코멘트에 issues:write 를 요구해 읽기 전용과 맞지 않는다.
+  # breaking 을 main 에 proto 가 있을 때만 도는 이유는 첫 도입 PR 에서 비교 대상 모듈이 비어 터지기 때문이다.
   contracts-proto:
     name: contracts-proto
     runs-on: ubuntu-latest

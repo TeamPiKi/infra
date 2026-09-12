@@ -221,7 +221,7 @@ if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   contracts_dir="$repo_root/shared-infra/contracts"
   mkdir -p "$contracts_dir"
   install_asset contracts/extraction-error-codes.yaml "$contracts_dir/extraction-error-codes.yaml" 444 yaml
-  # 와이어 모양 정본. 소비 repo 의 빌드(generateProto)가 이 경로를 proto 소스로 읽는다 — 없으면 컴파일이 깨진다.
+  # 소비 repo 의 빌드가 이 경로를 proto 소스로 읽는다 - 없으면 컴파일이 깨진다.
   install_asset contracts/extraction.proto "$contracts_dir/extraction.proto" 444 proto
 fi
 
