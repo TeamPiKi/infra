@@ -41,6 +41,9 @@ jobs:
       - name: Run run_container.sh self-test
         run: REQUIRE_DOCKER=1 ./blocks/run_container.test.sh
 
+      - name: Run prune_images.sh self-test
+        run: ./blocks/prune_images.test.sh
+
       - name: Run slot_decide.sh self-test
         run: ./blocks/slot_decide.test.sh
 
