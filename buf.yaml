@@ -1,0 +1,15 @@
+version: v2
+modules:
+  - path: contracts
+lint:
+  use:
+    - STANDARD
+  except:
+    # enum 이름이 그대로 JSON 문자열이라 접두사를 붙이면 와이어가 바뀐다.
+    - ENUM_VALUE_PREFIX
+    # 파일 경로가 설치 스크립트·소비 repo checkout 에 묶여 있어 패키지 계층으로 펼치지 않는다.
+    - PACKAGE_DIRECTORY_MATCH
+breaking:
+  use:
+    # JSON 와이어까지 보므로 필드명 변경도 깨는 변경으로 잡힌다.
+    - WIRE_JSON

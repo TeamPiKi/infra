@@ -1,0 +1,100 @@
+// 추출 API 계약의 와이어 정본. 모양과 필드 의미 둘 다 이 파일이 갖는다.
+// 행동 계약(응답 3갈래·타임아웃 예산·진화 규칙)은 extraction-api.md, 실패 code 분류는 extraction-error-codes.yaml.
+// 필드명은 protobuf JSON 매핑이 현행 JSON 과 일치하도록 선택 - 생성 클래스 소비자와 Jackson DTO 소비자의 혼재 허용.
+
+syntax = "proto3";
+
+package piki.extraction.v1;
+
+option java_multiple_files = true;
+option java_package = "com.depromeet.piki.contracts.extraction.v1";
+
+message LinkExtractionRequest {
+  // 상품 페이지 URL. https 스킴 한정. 호출자 등록 경계의 검증 이후 Extractor 경계의 재검증 대상(다층 방어).
+  string url = 1;
+  // 플랫폼의 명시적 허락 여부. 판정 원장은 호출자 DB, Extractor·렌더 서비스는 요청 단위 수신자.
+  // 여는 것은 렌더 서비스의 우회 수단(지문 보정·프록시)뿐. 추출 경로 자체는 이 값과 무관하게 동일.
+  // 생략은 false(허락 없음)로 정규화 - 이 필드를 모르는 구버전 호출자도 안전한 쪽으로만 어긋나는 fail-safe.
+  bool authorized = 2;
+  // 이 요청의 LLM 추출에 쓸 모델. 정책 원장은 호출자 DB(백오피스).
+  // 요청 단위 수신의 이유는 박스 한 대의 환경 공유 - 환경변수 고정 시 dev 변경이 prod 파싱까지 덮는 사고.
+  // 생략·빈 문자열이면 Extractor 의 기본 모델.
+  string model = 3;
+}
+
+// 값을 만든 추출 경로. 호출자의 snapshot 출처(SERVER/SERVER_LLM) 구분 근거.
+enum ExtractionMethod {
+  EXTRACTION_METHOD_UNSPECIFIED = 0;
+  // 구조화 데이터(JSON-LD·OpenGraph) 파싱. 결정론적.
+  STRUCTURED = 1;
+  // Gemini 추출. URL 경로의 fallback 과 image 경로.
+  LLM = 2;
+}
+
+// 성공 200 body. 값 필드는 전부 선택이고 보장은 name(non-blank)·image_url·current_price 중 하나 이상.
+// 하나도 못 채운 경우만 422 UNTRUSTWORTHY_VALUE, 일부만 채운 결과는 채운 값 그대로 200.
+// optional 선언의 이유는 "안 채움"과 "0·빈 문자열"의 구분. 안 채운 필드는 JSON 에서 생략.
+message ExtractionResult {
+  optional string name = 1;
+  optional string image_url = 2;
+  optional int32 current_price = 3;
+  // ISO 4217. 단독으로는 "채웠다"의 근거에서 제외 - 호출자 READY 필수 집합 밖.
+  optional string currency = 4;
+  // 리다이렉트 귀결점. 호출자의 상품 정체성(canonical) 정규화 입력.
+  // 단축링크는 경로가 불투명 코드라 이 값 없이 같은 상품 식별 불가. link 경로 필수, image 경로 없음.
+  optional string final_url = 5;
+  ExtractionMethod method = 6;
+}
+
+// 실패 code. 각 값의 의미는 이 주석이 정본.
+// 목록은 extraction-error-codes.yaml 과 1:1(소비 repo 메타 테스트가 대조), 분류(disposition·bucket·scope·escalatable)의 정본은 그 파일.
+enum ExtractionErrorCode {
+  EXTRACTION_ERROR_CODE_UNSPECIFIED = 0;
+
+  // 상품 페이지가 아닌 문서. 본문 판정 또는 Content-Type 단계의 확정(후자는 본문 미열람).
+  NOT_PRODUCT_PAGE = 1;
+  // url 형식·스킴 위반, 또는 host 조회 실패(DNS 응답 없음). 없는 주소라 헤드리스 승격 대상 밖.
+  INVALID_URL = 2;
+  // fetch 2xx 지만 본문이 데이터 없는 CSR 셸. 헤드리스 승격 대상.
+  EMPTY_SHELL = 3;
+  // 가시 텍스트·데이터 script 둘 다 부재. LLM 호출 없이 확정(빈 셸 환각 차단).
+  NO_EXTRACTABLE_CONTENT = 4;
+  // 대상 4xx(403 차단·404·429). 봇 방어의 클로킹 가능성.
+  FETCH_CLIENT_ERROR = 5;
+  // 대상 5xx 중 결정론적 재실패. 대형 몰에서는 장애보다 봇 방어 쪽.
+  PERMANENT_UPSTREAM = 6;
+  // 범위·상식 위반 값, 또는 값 0건. 일부만 채운 결과는 실패가 아니라 200.
+  UNTRUSTWORTHY_VALUE = 7;
+  // 재시도에도 같은 LLM 실패(4xx·파싱 불가·정책 거부로 text part 부재).
+  LLM_INVALID_RESPONSE = 8;
+  // image 경로 전용. 빈 이미지·지원 밖 MIME.
+  IMAGE_UNSUPPORTED = 9;
+  // 사설·메타데이터·loopback 으로 resolve 되는 host 차단(SSRF). 헤드리스 승격 절대 금지.
+  BLOCKED_HOST = 10;
+  // redirect hop 상한 초과. 무한·체인 의심.
+  TOO_MANY_REDIRECTS = 11;
+  // 3xx 응답에 Location 부재·손상.
+  MALFORMED_REDIRECT = 12;
+
+  // 대상 502·503·504, 연결 실패, 빈 body.
+  UPSTREAM_ERROR = 13;
+  // Gemini 5xx·429·408·transport 오류.
+  LLM_UPSTREAM = 14;
+  // 실제 브라우저로도 차단. 429·일시 챌린지가 섞여 영구·일시 구분 불가라 fail-safe 로 일시.
+  // HEADLESS_UPSTREAM 과 code 를 나눈 이유는 대응 차이 - 차단 추세는 정책 후보, 장애 추세는 렌더 박스 점검.
+  HEADLESS_BLOCKED = 15;
+  // 렌더 서비스 연결 실패·타임아웃·빈 렌더·브라우저 오류·압축 해제 실패.
+  HEADLESS_UPSTREAM = 16;
+  // image 경로 전용. S3 read·write 실패.
+  STORAGE_ERROR = 17;
+
+  // probe 전용. 그런 모델 부재(Gemini 404) - 오타이거나 폐기된 모델.
+  MODEL_NOT_FOUND = 18;
+  // probe 전용. 모델은 존재하나 그 경로의 요청 처리 불가 - 스키마 비호환(400)·결제 티어 제한·응답 스키마 불일치.
+  MODEL_INCOMPATIBLE = 19;
+}
+
+// 확정 실패 422 body. 호출자의 전이 판정은 HTTP status 전용이고 code 는 관측·분류용.
+message ExtractionFailure {
+  ExtractionErrorCode code = 1;
+}
