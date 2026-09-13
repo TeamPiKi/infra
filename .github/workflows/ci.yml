@@ -1,6 +1,6 @@
 name: ci
 
-# 두 job 모두 읽기 전용이다 - 토큰 범위를 최소화하고 checkout 의 자격증명 잔존도 끈다.
+# 세 job 모두 읽기 전용이다 - 토큰 범위를 최소화하고 checkout 의 자격증명 잔존도 끈다.
 permissions:
   contents: read
 
@@ -55,3 +55,23 @@ jobs:
 
       - name: Run workspace-init.sh self-test
         run: ./workspace/workspace-init.test.sh
+
+  contracts-proto:
+    name: contracts-proto
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: bufbuild/buf-action@v1
+        with:
+          lint: true
+          format: true
+          breaking: ${{ github.event_name == 'pull_request' }}
+          # 로컬 .git 을 비교 대상으로 주면 깨진다 - PR 체크아웃은 분리된 HEAD 라 main 브랜치가 없다.
+          breaking_against: 'https://github.com/${{ github.repository }}.git#branch=main'
+          # 결과 코멘트는 PR 쓰기 권한을 요구한다. 이 워크플로는 읽기 전용이라 끈다.
+          pr_comment: false
+          push: false
+          archive: false

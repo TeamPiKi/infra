@@ -5,6 +5,10 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
 
 소비자는 core 의 파싱 워커 하나뿐이다. 공개 API 가 아니며 보안그룹으로 내부망에서만 접근한다(별도 인증 없음).
 
+**요청·응답의 모양(필드·타입·enum 이름)의 정본은 `contracts/extraction.proto`** 다(파일럿: link 경로).
+소비 repo 는 빌드 시점에 이 파일에서 클래스를 생성해 쓰고, 와이어는 protobuf 의 JSON 매핑이라 아래
+JSON 예시와 바이트 단위로 같다. 모양이 이 문서와 어긋나면 proto 가 옳다 — 이 문서는 의미를 맡는다.
+
 **code 목록의 정본은 `contracts/extraction-error-codes.yaml`** 이다. 이 문서는 각 code 가 무엇을
 뜻하는지를 맡고, 목록·disposition·bucket 은 그 파일이 갖는다(이중 관리 방지). 카탈로그에 있는데
 아래 표에 없는 code 가 보이면 카탈로그가 옳다 — 설명을 여기 보탠다.
@@ -50,18 +54,8 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
 { "url": "https://www.musinsa.com/products/12345", "authorized": false, "model": "gemini-3.1-flash-lite" }
 ```
 
-- `url` (필수): https 스킴의 상품 페이지 URL. 형식·스킴·미지원 플랫폼의 동기 검증은 호출자(core 등록
-  경계)가 이미 끝냈다는 전제이나, Extractor 도 자기 경계에서 방어 검증한다(다층 방어).
-- `authorized` (선택, 기본 false): 이 대상이 플랫폼의 명시적 허락을 받았는가. 판정의 단일 진실은 호출자
-  DB(백오피스)에 있고 무상태인 Extractor 는 요청 단위로만 받아 렌더 서비스까지 전달한다. **추출 경로는 이
-  값과 무관하게 같다** — 정적 fetch 로 시작해 필요하면 브라우저로 승격하는 흐름은 항상 동일하다. 이 값이
-  true 일 때 열리는 것은 렌더 서비스의 우회 수단(지문 보정·프록시)뿐이다. 생략·null 은 false(허락 없음)로
-  정규화되는 fail-safe 라, 이 필드를 모르는 구버전 호출자의 요청은 안전한 쪽으로만 어긋난다.
-- `model` (선택): 이 요청의 LLM 추출에 쓸 모델. authorized 와 같은 성질이다 — 정책의 단일 진실은
-  호출자 DB(백오피스)에 있고 Extractor 는 요청 단위로만 받는다. **요청 단위로 받는 이유**: Extractor
-  박스 한 대를 여러 환경이 공유하므로, 모델을 Extractor 환경변수로 잡으면 dev 에서 바꾼 것이 prod
-  파싱까지 덮는다. 생략·null·빈 문자열이면 Extractor 의 기본 모델을 쓴다 — 구버전 호출자의 요청이
-  그대로 동작하므로 배포 순서 무관.
+- **필드의 의미는 `extraction.proto` 의 주석이 정본이다.** 이 절은 필드가 아니라 그 위에서 도는 서비스
+  동작만 적는다. 아래 JSON 은 와이어 모양 예시다.
 - **지정 모델이 404 면 기본 모델로 대체하고 추출을 이어간다.** 등록 당시 유효했던 모델이 폐기돼 사라지는
   경우가 있고, 그때 파싱 전체가 죽는 것보다 기본 모델로 이어가는 편이 낫다(가용성 우선). 대체가 일어나도
   응답 모양은 같으며, 발생 사실은 Extractor 의 warn 로그와 `gemini.model.fallback` 카운터에만 남는다.
@@ -81,24 +75,6 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
   "method": "STRUCTURED"
 }
 ```
-
-- `finalUrl`: 리다이렉트를 따라간 최종 페이지 URL. 호출자가 상품 정체성(canonical) 정규화의 입력으로
-  쓴다 — 단축링크(onelink 등)는 경로가 불투명 코드라 이 값 없이 같은 상품을 알아볼 수 없다. link 경로는
-  항상 채워지고 image 경로는 null. 호출자는 이 값이 없으면(구버전 Extractor) canonical 확정을
-  건너뛴다 — 배포 순서 무관.
-- `method`: 값을 만든 추출 경로. `STRUCTURED`(구조화 파싱, 결정론적) | `LLM`(Gemini — URL fallback·image
-  경로). 호출자가 snapshot 출처(SERVER/SERVER_LLM)를 구분 저장하는 근거다. tolerant reader 라 모르는
-  값이 와도 무시하고 출처 미기록으로 둔다.
-- **값 필드는 전부 nullable 이고, Extractor 는 "하나라도 채웠다" 만 보장한다.** `name`(non-blank)·
-  `imageUrl`·`currentPrice` 중 **하나도 못 채웠을 때만** 422(`UNTRUSTWORTHY_VALUE`)이고, 일부만 채운
-  결과는 채운 값 그대로 200 이다. `currency` 는 단독으로 "채웠다" 의 근거가 되지 못한다(READY 필수가
-  아니라서다).
-- 세 필드는 여전히 core 의 READY 불변식(name·price·imageUrl·extractedAt, extractedAt 은 호출자가 전이
-  시점에 채움)과 같은 집합이지만, **그 집합을 채우는 책임이 Extractor 단독에서 "Extractor 가 채운 만큼 +
-  사용자가 나머지" 로 갈렸다.** 호출자는 부분값을 `INCOMPLETE` 상태로 받아 사용자 입력으로 완성한다
-  (TeamPiKi/core#944). 사진에 가격이 박혀 있지 않은 것은 정상 입력이라, 셋을 다 요구하면 "쇼핑몰 화면
-  캡처" 만 통과하는 계약이 되기 때문이다.
-- 호출자의 엔티티 불변식은 최후 보루로 유지된다 — READY 로 전이하는 값은 여전히 세 필드를 다 요구한다.
 
 확정 실패 422:
 
@@ -175,32 +151,10 @@ link 와 같은 `UNTRUSTWORTHY_VALUE` 를 재사용한다.
 **일시 실패를 거절로 바꾸지 않는다.** 5xx·429·타임아웃을 422 로 내보내면 외부가 잠깐 흔들린 사이에
 멀쩡한 모델이 "쓸 수 없는 모델"로 판정돼 저장이 막힌다.
 
-## 3. code 의 의미
+## 3. code 의 분류
 
-목록·`disposition`·`bucket` 의 정본은 `contracts/extraction-error-codes.yaml` 이다. 아래는 각 code 가
-무엇을 가리키는지에 대한 설명이다.
-
-| code | 의미 |
-|---|---|
-| `NOT_PRODUCT_PAGE` | 상품 페이지가 아니다 - 읽어 보니 아니거나, 응답 Content-Type 이 영상·압축파일 등이라 애초에 페이지가 아니거나(후자는 본문을 읽지 않고 확정한다) |
-| `INVALID_URL` | url 형식·스킴 위반이거나, host 를 조회하지 못했다(DNS 응답 없음). 형식·스킴 위반은 호출자가 동기 검증하므로 정상 흐름에서 도달하지 않고(방어), 조회 실패는 등록 시점에 알 수 없어 추출에서 처음 드러난다. 없는 주소는 다시 물어도 없으므로 확정이며, 헤드리스 에스컬레이션 대상도 아니다 |
-| `EMPTY_SHELL` | fetch 는 2xx 지만 본문이 데이터 없는 CSR 셸(파싱 no-data 를 재분류). 헤드리스 에스컬레이션 대상이라, 헤드리스가 켜진 구성에선 헤드리스 결과가 대신 응답된다 |
-| `NO_EXTRACTABLE_CONTENT` | 본문에 가시 텍스트도 데이터 script 도 없어 LLM 을 부르지 않고 확정(빈 셸 환각 차단). plain 경로는 EMPTY_SHELL 재분류가 선행하므로 사실상 헤드리스 렌더 결과까지 셸일 때 나온다 |
-| `FETCH_CLIENT_ERROR` | 대상 4xx (403 차단·404·429 등). 봇 방어의 클로킹일 수 있다 |
-| `PERMANENT_UPSTREAM` | 대상 500/501 등 결정론적 재실패 5xx. 대형 몰은 상시 가용이라 대개 진짜 장애가 아니라 봇 방어다 |
-| `UNTRUSTWORTHY_VALUE` | 추출값이 범위·상식 위반이거나, 값을 하나도 못 채웠다(일부만 채운 결과는 실패가 아니라 200) |
-| `LLM_INVALID_RESPONSE` | 재시도해도 같은 LLM 실패(4xx·파싱 불가·정책 거부로 text part 없음) |
-| `IMAGE_UNSUPPORTED` | 이미지 경로 전용 — 빈 이미지·미지원 MIME |
-| `BLOCKED_HOST` | 사설·메타데이터·loopback 으로 resolve 되는 host 를 SSRF 로 차단. 헤드리스 에스컬레이션 절대 금지 대상 |
-| `TOO_MANY_REDIRECTS` | redirect 가 hop 상한을 넘어 무한·체인 의심 |
-| `MALFORMED_REDIRECT` | 3xx 를 주면서 Location 이 없거나 깨진 비정상 redirect |
-| `UPSTREAM_ERROR` | 대상 몰 502/503/504·연결 실패·빈 body |
-| `LLM_UPSTREAM` | Gemini 5xx/429/408/transport 오류 |
-| `HEADLESS_BLOCKED` | 실제 브라우저로도 차단(verdict=BLOCK). 렌더 서비스의 BLOCK 판정에는 429·일시 챌린지가 섞여 영구/일시를 못 가르므로 fail-safe 로 일시다. `HEADLESS_UPSTREAM` 과 code 를 나눈 이유는 대응이 달라서다(차단 추세 = 정책 후보, 장애 추세 = 렌더 박스 점검) |
-| `HEADLESS_UPSTREAM` | 렌더 서비스 연결 실패·타임아웃·빈 렌더(verdict=EMPTY)·브라우저 오류(verdict=ERROR)·압축 해제 실패. 렌더 서비스는 파싱하지 않으므로 HTML 이 있으면 verdict 와 무관하게 Extractor 파이프라인이 추출을 이어간다 |
-| `STORAGE_ERROR` | 이미지 경로 전용 — S3 read/write 실패 |
-| `MODEL_NOT_FOUND` | 프로브 전용 — 그런 모델이 없다(Gemini 404). 오타이거나 폐기돼 사라진 모델 |
-| `MODEL_INCOMPATIBLE` | 프로브 전용 — 모델은 있으나 그 경로의 요청을 처리하지 못한다. 요청 스키마 비호환(400)·결제 티어 제한, 200 을 주면서 응답 스키마를 못 맞춘 경우까지 포함 |
+각 code 가 무엇을 가리키는지는 `extraction.proto` 의 enum 값 주석이 정본이다. 목록과 `disposition`·
+`bucket` 은 `contracts/extraction-error-codes.yaml` 이 갖는다. 이 절은 bucket 축만 설명한다.
 
 ### bucket (확정 실패의 운영 분류)
 
@@ -246,8 +200,12 @@ recover 가 재시도한다. 그 사이 Extractor 가 계속 돌아 중복 발�
 
 - **additive-only**: 응답 필드 추가·422 code 추가는 자유. 필드 제거·의미 변경·타입 변경은 금지 —
   필요하면 새 경로로 분리한다.
-- **code 를 더하거나 고칠 때는 카탈로그(`extraction-error-codes.yaml`)를 먼저 고친다.** 소비 repo 의
-  메타 테스트가 카탈로그를 읽어 대조하므로, 구현만 고치면 그쪽이 빨간불이 된다 — 그게 이 배치의 목적이다.
+- **code 를 더하거나 고칠 때는 카탈로그(`extraction-error-codes.yaml`)와 `extraction.proto` 의 enum 을 함께
+  고친다.** 소비 repo 의 메타 테스트가 카탈로그를 읽어 대조하므로, 구현만 고치면 그쪽이 빨간불이 된다 —
+  그게 이 배치의 목적이다.
+- **모양을 바꿀 때는 `extraction.proto` 만 고친다.** 필드 추가는 번호를 새로 받고, 번호 재사용·타입 변경·
+  삭제·필드명 변경은 CI 의 `buf breaking` 이 막는다. 생성 클래스가 양쪽 코드를 따라오게 하므로 DTO 를 손으로
+  맞추는 단계가 없다.
 - **배포 순서: Extractor 먼저, 소비자(core) 나중.**
 - 호출자는 tolerant reader — 모르는 응답 필드·code 를 무시한다.
 
