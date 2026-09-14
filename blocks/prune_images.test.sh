@@ -66,12 +66,20 @@ reset() {
   export FAKE_FREE_MB="$1"
 }
 
+# --- 기본 기준 (인자 없이) ---
+# 기본값이 10GB 임을 경계로 못 박는다. 값이 바뀌면 이 두 케이스가 먼저 깨져야 한다.
+
+reset "100,10240"
+"$PRUNE" >/dev/null 2>&1
+check "인자 없음 + 정리 후 10240MB -> exit 0" 0 "$?"
+
+reset "100,10239"
+"$PRUNE" >/dev/null 2>&1
+check "인자 없음 + 정리 후 10239MB -> exit 1" 1 "$?"
+
 # --- 인자 오류 (exit 2) ---
 
 reset "9000"
-"$PRUNE" >/dev/null 2>&1
-check "min-free-gb 없음 -> exit 2" 2 "$?"
-
 "$PRUNE" --min-free-gb 2 --bogus x >/dev/null 2>&1
 check "알 수 없는 인자 -> exit 2" 2 "$?"
 

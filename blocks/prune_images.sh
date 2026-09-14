@@ -16,14 +16,18 @@
 # 세는 로직 없이 "현재 + 직전" 두 개가 유지된다. 더 오래된 롤백은 레지스트리에서 받는다.
 #
 # 사용 예:
-#   prune_images.sh --min-free-gb 4            # 이미지가 큰 서비스(renderer 약 1.7GB)
-#   prune_images.sh --min-free-gb 2            # core·extractor
-#   prune_images.sh --min-free-gb 2 --dry-run  # 정리 없이 여유만 검사
+#   prune_images.sh                            # 기본 기준(10GB)
+#   prune_images.sh --min-free-gb 4            # 박스 사정이 다른 서비스만 덮어쓴다
+#   prune_images.sh --dry-run                  # 정리 없이 여유만 검사
 #
 # 인자:
-#   --min-free-gb  (필수) 정리 후 있어야 할 최소 여유(GB, 정수). 기준은 "새 이미지 크기 x 2 + 여유"
-#                  이고 이미지 크기가 서비스마다 다르므로 default 를 두지 않는다
-#                  (conventions/blocks.md 2번 원칙).
+#   --min-free-gb  정리 후 있어야 할 최소 여유(GB, 정수). 기본 10.
+#                  **박스마다 다른 값이 아니라 함대 정책이라 여기에 기본값을 둔다.** 박스마다 다른 것은
+#                  실사용 최대(이미지 크기·swap)이고 그 차이는 앱 박스 볼륨을 25GB 로 통일해 흡수했다
+#                  (conventions/infra.md). 규약이 default 를 경계하는 이유는 "명시를 빠뜨려도 조용히
+#                  통과" 인데 이 값은 반대다. 기본값이 높으면 배포가 멈춰 드러나고, 위험한 쪽(너무 낮아
+#                  조용히 디스크가 차는 것)은 보수적 기본값이 막는다. 볼륨이 25GB 가 아닌 박스를 새로
+#                  들이면 그 서비스만 이 인자로 덮어쓴다.
 #   --path         여유를 잴 경로. 기본 `/`. docker 데이터 루트가 다른 볼륨이면 그 경로를 준다
 #   --dry-run      (선택 플래그) 정리하지 않고 현재 여유만 검사한다
 #
@@ -31,7 +35,7 @@
 
 set -euo pipefail
 
-MIN_FREE_GB=""
+MIN_FREE_GB=10
 TARGET_PATH="/"
 DRY_RUN=0
 
@@ -50,7 +54,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$MIN_FREE_GB" ] || { echo "--min-free-gb is required" >&2; exit 2; }
 case "$MIN_FREE_GB" in
   ''|*[!0-9]*) echo "--min-free-gb must be a non-negative integer: $MIN_FREE_GB" >&2; exit 2;;
 esac
