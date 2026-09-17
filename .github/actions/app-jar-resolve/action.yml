@@ -1,0 +1,61 @@
+name: app-jar-resolve
+description: >-
+  배포 러너에 부트 JAR 을 놓는다. workflow_run 이면 트리거한 CI 실행의 아티팩트(app-jar-upload)를
+  run-id 로 내려받고, 그 외(workflow_dispatch)면 러너에서 Gradle 로 빌드한다.
+  빌드에 필요한 다른 체크아웃(계약 등)은 호출자가 이 action 앞에서 마친다.
+
+inputs:
+  java-version:
+    description: 러너 빌드 fallback 의 JDK 버전
+    required: true
+  artifact-name:
+    description: 아티팩트 이름. app-jar-upload 의 같은 입력과 맞춘다.
+    default: app-jar
+  libs-dir:
+    description: JAR 을 놓을 디렉토리
+    default: build/libs
+  gradle-task:
+    description: 러너 빌드 fallback 의 Gradle 태스크
+    default: bootJar
+  token:
+    description: 다른 run 의 아티팩트를 내려받을 토큰. 호출 워크플로에 actions:read 가 있어야 한다.
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    # run-id 로 트리거한 CI 실행에 못박는다. '최신' 아티팩트를 집으면 배포 도중 다른 push 의 JAR 이 섞인다.
+    - name: Download JAR from triggering CI run
+      if: github.event_name == 'workflow_run'
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.libs-dir }}
+        run-id: ${{ github.event.workflow_run.id }}
+        github-token: ${{ inputs.token }}
+
+    - name: Set up JDK (runner build fallback)
+      if: github.event_name != 'workflow_run'
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: temurin
+
+    - name: Cache Gradle (runner build fallback)
+      if: github.event_name != 'workflow_run'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.gradle.kts', '**/gradle-wrapper.properties') }}
+        restore-keys: gradle-${{ runner.os }}-${{ runner.arch }}-
+
+    - name: Build JAR (runner build fallback)
+      if: github.event_name != 'workflow_run'
+      shell: bash
+      env:
+        GRADLE_TASK: ${{ inputs.gradle-task }}
+      run: |
+        chmod +x gradlew
+        ./gradlew "$GRADLE_TASK" --no-daemon

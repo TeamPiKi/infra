@@ -1,0 +1,28 @@
+name: app-jar-upload
+description: CI 가 만든 부트 JAR 을 배포(app-jar-resolve)가 받아 쓰도록 아티팩트로 올린다.
+
+inputs:
+  artifact-name:
+    description: 아티팩트 이름. app-jar-resolve 의 같은 입력과 맞춘다.
+    default: app-jar
+  libs-dir:
+    description: JAR 이 놓이는 디렉토리
+    default: build/libs
+  retention-days:
+    description: 보존 일수. 소비는 이 CI 직후의 workflow_run 배포뿐이라 짧게 둔다.
+    default: "3"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        # plain jar 를 빼야 Dockerfile 의 COPY 글롭이 하나만 매칭한다.
+        path: |
+          ${{ inputs.libs-dir }}/*.jar
+          !${{ inputs.libs-dir }}/*-plain.jar
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: error
+        # JAR 은 이미 zip 이라 재압축은 CPU 만 쓴다.
+        compression-level: 0

@@ -70,4 +70,7 @@ infra/
     scripts/     # 워크스페이스 유틸 (piki-worktrees)
   .github/workflows/  # CI (정본) — shellcheck·블록 셀프테스트
     ci.yml
+  .github/actions/    # GitHub Actions 모양의 공유 블록 — 소비 repo 워크플로가 `TeamPiKi/infra/.github/actions/<이름>@main` 으로 조립
+    app-jar-upload/   # CI 가 부트 JAR 을 아티팩트로 올림 (plain jar 제외·보존 3일)
+    app-jar-resolve/  # 배포 러너가 JAR 을 확보 — workflow_run 이면 트리거 run 의 아티팩트, 아니면 러너 빌드
 ```
