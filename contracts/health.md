@@ -30,7 +30,7 @@ SSOT 는 호출부 한 곳이다 (일반 규칙은 `conventions/blocks.md` 2번 
 |---|---|---|---|---|---|---|
 | server | `/health` | `{"status":"ok"}` | 5s | 60 | 300s | `deploy.yml:563` — JVM+DB 기동 |
 | extractor | `/actuator/health` | `{"status":"UP"}` | 5s | 24 | 120s | actuator 표준 — stateless JVM (제안값) |
-| headless | `/health` | `{"ok":true,"proxy_loaded":…}` | 3s | 20 | 60s | `deploy_remote.sh` — 브라우저 프로세스 |
+| headless | `/health` | `{"ok":true,…}` | 3s | 20 | 60s | `deploy_remote.sh` — 브라우저 프로세스 |
 
 - **간격·횟수·총 대기는 서비스 기동 특성이라 일부러 다르게 둔다.** 계약이 통일하는 건
   "블록·판정 방식·경로 규약"이지 대기 시간이 아니다.
