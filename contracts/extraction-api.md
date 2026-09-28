@@ -26,8 +26,8 @@ JSON 예시와 바이트 단위로 같다. 모양이 이 문서와 어긋나면 
   호출자는 어떤 fetch 전략이 쓰였는지 모른다. **브라우저를 여는 것 자체에는 허락이 필요 없다** — 우리는
   신원을 UA 로 밝히고 우리 IP 로 가며, 막히면 막힌 대로 보고한다.
 - 단 "이 대상이 플랫폼의 명시적 허락을 받았는가"의 **판정**은 호출자(DB·백오피스)가 주인이라, 요청 필드
-  `authorized` 로 받는다(2장) — 무상태 불변식을 지키는 선에서의 유일한 정책 수용 지점이다. 이 값이 여는
-  것은 렌더 서비스의 우회 수단(지문 보정·프록시)뿐이고, Extractor 는 판단 없이 전달만 한다.
+  `authorized` 로 받는다(2장) — 무상태 불변식을 지키는 선에서의 유일한 정책 수용 지점이다. 이 값을 쓰는
+  곳은 렌더 서비스뿐이고, Extractor 는 판단 없이 전달만 한다.
 
 ## 1. 응답 3갈래 (전이 규약)
 
@@ -180,7 +180,7 @@ link 와 같은 `UNTRUSTWORTHY_VALUE` 를 재사용한다.
 | core -> Extractor HTTP read | 55s (connect 2s) | stale 미만 — recover 의 유령 중복 발주 방지. link·image 공용 |
 | Extractor 내부 합계 (link) | 약 50s | 아래 합 + 여유 |
 | 대상 몰 fetch (link) | connect 5s / read 15s | |
-| 헤드리스 render (link) | connect 2s / read 20s | 실측 전형 1.6-5.5s(프록시 포함) 대비 약 4배 여유. headless-first 최악(connect 2 + render 20 + LLM 30 = 약 52s)이 호출자 read 55s 안에 들도록 상한 |
+| 헤드리스 render (link) | connect 2s / read 20s | 실측 전형 1.6-5.5s 대비 약 4배 여유. headless-first 최악(connect 2 + render 20 + LLM 30 = 약 52s)이 호출자 read 55s 안에 들도록 상한 |
 | Gemini | read 30s | link LLM fallback·image OCR 동일 |
 | Extractor 내부 합계 (image) | 약 40s | S3 download + Gemini OCR 30s + crop + 결과 upload. S3 는 동일 리전이라 수 초 |
 

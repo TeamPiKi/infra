@@ -55,7 +55,7 @@
 - **공개 서비스(server)만** 0.0.0.0/0 인바운드(80·443) + nginx TLS 를 연다. 앱 포트(8080)는
   외부에 노출하지 않고 nginx 가 localhost 로 forward 한다. server SG 의 ingress 규칙은
   콘솔/CLI 가 권위를 가지며 terraform 은 `ignore_changes = [ingress]` 로 덮어쓰지 않는다.
-- **egress 는 셋 다 전체 개방**(0.0.0.0/0). 외부 몰 fetch·LLM·헤드리스 렌더·프록시로 나가야 하기 때문.
+- **egress 는 셋 다 전체 개방**(0.0.0.0/0). 외부 몰 fetch·LLM·헤드리스 렌더로 나가야 하기 때문.
 
 ## 4. 시크릿 네이밍
 
