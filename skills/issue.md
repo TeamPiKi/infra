@@ -4,7 +4,7 @@
 
 **이슈는 "왜 / 무엇을" 만 받는다.** 우선순위·시작일·마감일 같은 메타 정보는 묻지 않는다. 작업 시작 시점에 적는 메타는 거의 추정치라 데이터 품질이 낮고, 진짜 메타 저장소는 GitHub Project 보드다 — 작업 진행 중 보드에서 채우면 충분하다.
 
-**Repository Issue 베타 필드는 채우지 않는다.** GitHub Issue 사이드바에 표시되는 베타 필드(Priority / Start date / Target date / Effort 등)는 Project 보드 필드와 **별개 저장소**다 — 자동 sync 없고 옵션 enum 도 일부 다르다 (예: 베타 Priority 에만 `Urgent` 추가). 메타는 Project 보드 한 곳을 single source 로 두고, 베타 필드는 None yet 으로 둔다. 베타가 정식 출시돼 sync 거동이 명확해지면 재평가.
+**Repository Issue 베타 필드는 채우지 않는다.** GitHub Issue 사이드바에 표시되는 베타 필드(Priority / Start date / Target date / Effort 등)는 Project 보드 필드와 **별개 저장소**다 — 자동 sync 없고 옵션 enum 도 일부 다르다 (예: 베타 Priority 에만 `Urgent` 추가). 메타는 Project 보드 한 곳을 single source 로 두고, 베타 필드는 None yet 으로 둔다.
 
 **이슈는 작업의 시작점이라 사용자 입력이 source of truth.** 모델이 추측해 본문을 채우거나 분류를 단정하지 않는다. 자동화하는 부분은 모두 검수 단계에서 사용자 OK 를 받는다.
 
@@ -141,11 +141,11 @@ A-1 과 동일.
 
 우선순위: **외부 가시적 변화** > **영역 한정**.
 
-1. 외부 가시적 변화 시그널 있으면:
-   - "버그", "안 됨", "결함 수정", "예외 발생" → `fix`
-   - "성능 개선", "속도", "메모리 절감", "latency" → `perf`
-   - "새 API", "새 엔드포인트", "외부 사용자/클라이언트 노출 새 기능" → `feat`
-   - "구조 개선", "리팩터링", "정리", "추출" (외부 동작 불변) → `refactor`
+1. 외부에서 보이는 동작이 바뀌거나, 동작은 그대로인 채 코드 구조를 바꾸면:
+   - 기대와 다른 동작을 바로잡음 → `fix`
+   - 같은 동작을 더 빠르게·적은 자원으로 → `perf`
+   - 외부 사용자·클라이언트에 새 기능을 노출 → `feat`
+   - 외부 동작은 그대로, 구조만 바꿈 → `refactor`
 
 2. 외부 동작 변화 없고 특정 영역만 만지면:
    - 문서만 (CLAUDE.md, README, ADR 등) → `docs`
@@ -295,12 +295,11 @@ gh project item-add 1 --owner TeamPiKi --url {이슈 URL}
 - **owner/repo 는 하드코딩하지 않는다.** 모든 `gh issue` 명령이 `--repo` 를 생략해 현재 워크트리의 origin 에서 레포를 자동 도출한다 — 어느 소비 repo(core·extractor·renderer)에서 호출해도 자기 레포를 가리킨다. 반면 Project 보드는 org 수준 상수라 `--owner TeamPiKi` · Project `1` 을 명시 유지한다 (세 repo 가 같은 보드를 공유). Issue Type ID(`IT_...`)도 org 상수라 그대로 둔다.
 - **자유 입력이 너무 짧으면 follow-up.** 다만 1~2 번 안에 끝낸다. 무한 follow-up 금지.
 - **모델 분해 결과는 검수 필수.** 사용자가 거부하면 즉시 부분 수정 또는 원본 그대로.
-- 분류 자동 결정은 시그널이 명확할 때만. 모호하면 `chore` fallback (보수적).
 - 라벨이 레포에 없어 `gh issue create` 가 실패하면 에러 그대로 보고.
 - `gh issue develop` 은 `--name` (브랜치 이름 옵션) 을 명시 (인터랙티브 회피). `--branch-name` 은 존재하지 않는 옵션이니 주의. `--checkout` 은 **현재 브랜치 작업을 고른 경우에만** 붙인다 — 워크트리 작업이면 현재 디렉토리가 끌려가 충돌하므로 빼고, 체크아웃은 `EnterWorktree` 가 대신한다.
 - **워크트리 진입은 `EnterWorktree(path=...)` 로만.** `git worktree add` 로 먼저 만든 뒤 `path` 로 진입한다. `EnterWorktree(name=...)` 는 새 브랜치를 자체 생성하며 baseRef 기본값이 repo 의 git default branch 를 가리켜, base 가 default 와 다른 repo(core)에서 분기 정책과 어긋난다. `path` 로 진입한 워크트리는 `ExitWorktree({action:"remove"})` 가 "not the owner" 로 거부하므로(이 세션의 도구가 만든 자리가 아니라는 뜻일 뿐, 남의 자리 신호가 아니다), 정리는 `/session-close` 에 맡긴다. 그 스킬이 다른 세션 사용 여부를 확인한 뒤 `git worktree remove` 로 직접 지운다.
 - `gh project item-add` 권한 부족 시 사용자에게 `gh auth refresh -h github.com -s project` 안내 (인터랙티브 디바이스 인증, 일회성).
-- **Project 1 은 레포와 같은 TeamPiKi org 소유라 same-org 연결이다.** 이슈가 붙으면 `gh issue view --json projectItems` 로 바로 확인된다 (depromeet #99 시절의 cross-org 제약 — projectItems 가 빈 배열이라 `item-list` 로 우회하던 것 — 은 보드 이관으로 해소됨).
+- **Project 1 은 레포와 같은 TeamPiKi org 소유다.** 이슈가 붙으면 `gh issue view --json projectItems` 로 바로 확인된다.
 - 본문에 `#{epic 번호}` 가 들어가면 GitHub 가 자동 cross-reference 링크 — 별도 sub-issue API 불필요.
 - 중복 이슈 검사 false positive 가능성 인지. 사용자가 "다른 이슈" 라 답하면 그대로 진행.
 - 이슈 템플릿(`.github/ISSUE_TEMPLATE/`)이 우선순위·일정을 required 로 정의해도 본문 자유 양식이라 강제받지 않는다. 이 스킬은 본질("왜/무엇을")만 받는 정책을 따른다.

@@ -10,7 +10,7 @@
 
 ### 0단계: 작업 위치 가드 + 모드 결정 + base branch 자동 감지
 
-**로비(워크스페이스 루트)는 절차로 가로막지 않는다** - 루트는 origin 이 없어 바로 아래 origin 가드에서 안내와 함께 멈춘다. 어느 워크트리에서 이어갈지는 대화 맥락으로 판단해 `EnterWorktree(path=)` 로 옮긴 뒤 0단계를 처음부터 다시 시작한다 (후보 열거: `~/.claude/scripts/piki-worktrees.sh`, 출력 `repo TAB path TAB branch TAB open|free`, `open`=다른 세션 사용 중). 고르게 하는 고정 다이얼로그는 두지 않는다 - 차단은 origin 가드가, "작업 전에 들어간다" 규칙은 루트 세션에 상주하는 로비 규칙 문서가 맡는다 (#69).
+**로비(워크스페이스 루트)는 절차로 가로막지 않는다** - 루트는 origin 이 없어 바로 아래 origin 가드에서 안내와 함께 멈춘다. 어느 워크트리에서 이어갈지는 대화 맥락으로 판단해 `EnterWorktree(path=)` 로 옮긴 뒤 0단계를 처음부터 다시 시작한다 (후보 열거: `~/.claude/scripts/piki-worktrees.sh`, 출력 `repo TAB path TAB branch TAB open|free`, `open`=다른 세션 사용 중). 고르게 하는 고정 다이얼로그는 두지 않는다 - 차단은 origin 가드가, "작업 전에 들어간다" 규칙은 루트 세션에 상주하는 로비 규칙 문서가 맡는다.
 
 **0-A. 작업 위치 가드 (워크트리 감지)** — `/pr` 의 모든 git/gh 명령은 현재 작업 디렉토리(cwd) 기준으로 돈다. 세션이 워크트리 안에 있으면 git worktree 특성상 자동으로 그 워크트리 브랜치를 바라보므로 별도 처리가 필요 없다. 문제는 cwd 가 작업 브랜치와 어긋난 경우 — 워크트리에서 작업해놓고 메인 체크아웃(base 브랜치)에서 `/pr` 을 부르면 조용히 틀린 PR(또는 "변경 없음")이 만들어진다. 이를 먼저 거른다.
 
@@ -182,7 +182,6 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
   - **이대로 올린다** (update 모드면 "이대로 갱신한다"): 현재 본문 그대로 진행한다. 사용자가 링크로 열어 직접 고쳤든 초안 그대로든, `gh pr create` · `gh pr edit` 가 `--body-file` 로 그 시점 파일을 읽어 반영한다. 단, 에디터에서 고쳤다면 **저장까지 마친 뒤** 눌러야 한다 — `--body-file` 은 디스크의 저장본을 읽으므로, 저장 안 된 에디터 버퍼는 조용히 누락된다 (게이트 질문에 이 저장 안내를 한 줄 포함한다).
   - **취소**: PR 생성·갱신을 멈춘다.
 - 본문을 고치고 싶은 사용자는 `AskUserQuestion` 이 항상 제공하는 **Other 에 "이렇게 고쳐줘" 를 직접 입력**한다. Claude 가 그 요청대로 본문을 고친 뒤 이 게이트를 다시 띄운다. **"수정해줘"를 별도 명시 옵션으로 두지 않는 이유**: 옵션은 눌러도 수정 내용이 안 담겨 Claude 가 "무엇을 고칠지"를 한 번 더 물어야 하고, 그러면 취소와 다를 바 없다. Other 자유 입력은 수정 내용을 한 번에 전달하므로 명시 옵션이 불필요하다. (링크로 열어 직접 편집하는 것도 별도 옵션이 아니다 — 고치고 "올린다"를 누르면 반영되어 첫 선택지에 흡수된다.)
-- 링크만 남기고 끝내지 않는다. 반드시 이 번호 선택 게이트로 사용자 결정을 받는다.
 - 사용자가 링크로 연 파일을 편집·저장할 수 있으므로, **확인 이후 그 파일을 다시 Write 로 덮어쓰지 않는다.** `gh pr create` / `gh pr edit` 는 `--body-file` 로 파일을 그 시점에 읽어 사용자 편집을 자동 반영한다. 최종 본문을 알아야 하면 Write 가 아니라 Read 로 다시 읽는다.
 
 ### 3-A. Create 모드 — PR 신규 생성
@@ -233,7 +232,7 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
    - PR 을 올린다는 것은 곧 리뷰 대기 상태이므로 `In review` 가 자연스럽다. create 모드는 방금 만든 PR 이라 Status 가 항상 기본값(`Backlog`)이므로 조건 없이 세팅한다 (update 모드의 메타데이터 보정은 기존 Status 를 확인 후 분기).
    - Start date 는 "이슈 생성일" 이 아니라 **첫 commit author date** 를 쓴다 — 이슈만 만들어 두고 작업 안 들어가는 백로그 케이스의 노이즈를 피하기 위해. 첫 commit 은 history rewrite 가 없는 한 바뀌지 않는 fact 라 create 모드에선 무조건 set.
    - ID 의미: project=1 노드 ID, Status 필드/`In review` 옵션 ID, Start date 필드 ID(`PVTF_..GA`, DATE 타입). 보드에서 필드/옵션이 바뀌면 이 ID 들도 갱신 필요.
-   - Target date 와 Status `Done` 은 core 에선 PR 머지 시점에 CI workflow (`pr-merge-project-sync.yml`) 가 자동 세팅하고, 그 워크플로가 없는 repo 는 머지 후 보드에서 수동으로 채운다. PR 스킬은 머지 이전 단계만 책임짐.
+   - Target date 와 Status `Done` 은 default branch 머지 시점에 각 repo 의 `.github/workflows/project-board-sync.yml` 이 세팅한다. PR 스킬은 머지 이전 단계만 책임짐.
    - 권한 부족 시 사용자에게 `gh auth refresh -h github.com -s project,read:project` 안내 (일회성 디바이스 인증).
 5. PR URL 과 부여된 assignee / 라벨 / Project(Status: In review, Start date) 결과를 사용자에게 전달한다.
 
@@ -257,7 +256,6 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
      - **구현·접근 전환** (같은 목표를 다른 방식으로): PR 서사에만 흡수한다. 이슈는 그대로.
      - **범위 변경** (이슈의 "무엇을" 이 늘거나 줄거나 갈라짐): PR 서사에 흡수하고 **이슈 본문의 "무엇을" 도 함께 갱신**한다 (`gh issue edit {번호} --body-file`). 이슈는 문제 진술의 정본이라 범위가 바뀐 채 낡아 있으면 PR 의 `close #` 가 무엇을 닫는지 어긋난다. 갈라져 나간 범위는 별도 이슈로 남긴다.
    - **남이 쓴 본문은 건드리지 않는다.** 갱신 범위는 이 스킬이 쓴 STAR 로 한정한다. 사람이 GitHub 에서 직접 고친 문구는 그대로 보존하고, 봇 소유 블록(CodeRabbit 의 `<!-- ... auto-generated ... -->` 마커 쌍 등)은 마커째 통째로 유지한다 — `gh pr edit --body-file` 은 전체 덮어쓰기라 한 번 누락되면 복구되지 않는다.
-   - 기존 PR 에 옛 방식의 `## Updates` 섹션이 남아 있으면, 그 내용이 본문 STAR 에 반영돼 있는지 확인한 뒤 섹션째 제거한다 (이행 정리).
    - 리뷰어에게 "지난 리뷰 이후 무엇이 바뀌었나"를 알릴 필요가 있으면(리뷰 재요청 등) 본문이 아니라 **PR 코멘트**로 남긴다 — 코멘트는 타임라인이라 증분의 자연스러운 자리이고, 본문은 늘 최종 서사만 유지한다.
    - 이유: 스쿼시 머지 후 blame 으로 오는 독자가 "초판 + 정오표"를 머릿속에서 리플레이하지 않고 본문만 읽으면 되게 한다. 본문이 늘 최종이므로 머지 시점의 별도 통합(fold) 단계도 필요 없다 — 언제 어디서 머지되든 본문은 이미 완결 서사다.
 4. **제목 변경 필요 검토**: 추가 변경으로 작업 의도/스코프가 바뀌었거나 기존 제목에 오타·부정확한 표현이 있으면 새 제목 제안. 그 외엔 제목 유지.
@@ -265,7 +263,7 @@ echo "ISSUE_LABELS=${ISSUE_LABELS:-없음}"
 6. 확인 후 `gh pr edit --body-file /tmp/pr_body_$SLUG.md` 로 갱신한다 (1번과 같은 경로, SLUG 는 블록 안에서 다시 구한다). 제목 변경이 있으면 `--title "새 제목"` 추가.
 7. **CodeRabbit 리뷰 대응** — 이번 변경이 CodeRabbit 리뷰 대응이라면 commit + push 로 끝내지 않는다. CodeRabbit 리뷰(인라인 thread + review body nitpick) 조회·평가·reply·resolve 는 **`/coderabbit` 스킬**로 처리한다. 그 스킬이 author 매칭(GraphQL `reviewThreads` 는 `coderabbitai`, REST `reviews` 는 `coderabbitai[bot]` 이라 `coderabbitai` 로 시작하는지로 판별), nitpick 조회, accept/reject reply·resolve 정책을 담는다. (사람 리뷰 thread 는 작성자가 직접 답하므로 `/coderabbit` 도 건드리지 않는다.)
 
-8. **메타데이터 보정** — 이전 버전 스킬로 만든 PR 은 assignee / 라벨 / Project / Start date 가 비어 있을 수 있다. update 모드에서도 멱등하게 보정한다 (이미 설정돼 있으면 no-op). `item-add` 는 이미 등록된 PR 이면 기존 item id 를 그대로 반환한다.
+8. **메타데이터 보정** — 손으로 만들었거나 create 모드가 중간에 실패한 PR 은 assignee / 라벨 / Project / Start date 가 비어 있을 수 있다. update 모드에서도 멱등하게 보정한다 (이미 설정돼 있으면 no-op). `item-add` 는 이미 등록된 PR 이면 기존 item id 를 그대로 반환한다.
     Status 는 **현재 값을 먼저 조회해, 리뷰 이전 단계(`Backlog` / `Ready` / `In progress`)일 때만** `In review` 로 올린다 — 이미 `Done` 등으로 옮긴 PR 을 되돌리지 않기 위함이다. Start date 도 멱등 — 이미 set 되어 있으면 건드리지 않는다 (사람이 수동으로 다른 의미로 박았을 수 있어 보존). Status / Start date 조회는 item 노드를 직접 부르는 GraphQL 이 안정적이다 (`gh project item-list` 는 단일 선택 필드 값을 신뢰성 있게 주지 않는다):
     ```bash
     ISSUE_LABELS="{1단계 echo 로 확인한 값. '없음'이면 빈 값}"
