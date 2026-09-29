@@ -2,11 +2,8 @@
 # 호출한다 (uses: TeamPiKi/infra/.github/workflows/project-board-sync.yml@main + secrets: inherit).
 # @main 참조는 허거덩(discord-pr-bot)과 같은 SSOT 선택 — 이 파일 머지 즉시 전 소비 repo 에 반영된다.
 #
-# 이 본문은 core 의 워크플로 3개(issue-project-sync·pr-issue-sync·pr-merge-project-sync)의 이식이다.
-# 조직 보드(PiKi 일정관리, projectV2 number 1)가 사실상 core 전용이 된 원인이 이 장치들의 core 편재였다.
-# core 하드코딩 한 곳을 일반화했다: 머지 PR 의 보드 반영 조건 base.ref == 'dev' 를
-# base.ref == default branch 비교로 바꿔, default 가 dev 인 repo(core·client)와 main 인
-# repo(extractor·infra·renderer)가 같은 정본을 쓴다.
+# 머지 PR 의 보드 반영 조건은 base.ref == default branch 비교다. default 가 dev 인 repo(core·client)와
+# main 인 repo(extractor·infra·renderer)가 같은 정본을 쓰기 위해서다.
 #
 # org-level Projects v2 는 default GITHUB_TOKEN 으로 접근 불가 — 각 repo secret 의 PROJECT_TOKEN
 # (classic PAT: project + repo 스코프. private repo 를 보드에 넣으려면 repo 필수) 을 쓴다.

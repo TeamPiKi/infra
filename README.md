@@ -40,7 +40,7 @@ infra/
                  # contracts 도 산문은 같지만, 기계가 읽는 code 카탈로그만 소비 repo 의
                  # shared-infra/contracts 로 설치한다 (로컬 참조 편의 — CI 는 checkout 으로 직접 받는다)
   conventions/   # 규약 (이미 통일된 기준선 + 이 repo 자산의 작성 규칙)
-    infra.md     # terraform state·컨테이너 배포단위·네트워크 격리 (등급 A)
+    infra.md     # terraform state·컨테이너 배포단위·네트워크 격리
     blocks.md    # 블록 작성 원칙 (실행위치 중립·값 미소유·종료코드·셀프검증)
     testing.md   # 테스트 컨벤션 원칙 (스택 무관 + JVM/Spring 공통) — install.sh 가 소비 repo 의
                  # .claude/rules/testing-principles.md 로 설치, 언어 바인딩은 각 repo 소유
