@@ -14,7 +14,7 @@
 # 세는 로직 없이 "현재 + 직전" 두 개가 유지된다. 더 오래된 롤백은 레지스트리에서 받는다.
 #
 # 사용 예:
-#   prune_images.sh                            # 기본 기준(10GB)
+#   prune_images.sh                            # 기본 기준(MIN_FREE_GB)
 #   prune_images.sh --min-free-gb 4            # 박스 사정이 다른 서비스만 덮어쓴다
 #   prune_images.sh --dry-run                  # 정리 없이 여유만 검사
 #

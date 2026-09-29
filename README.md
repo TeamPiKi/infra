@@ -23,11 +23,11 @@ PiKi 네 repo(core / extractor / renderer / infra)에
 
 세 서비스의 배포는 "같은 블록들의 다른 부분집합 + 다른 파라미터"로 표현된다.
 
-- headless  = build -> ship -> run -> healthcheck
+- renderer  = build -> ship -> run -> healthcheck
 - extractor = build -> ship -> inject_secrets -> run -> healthcheck
-- server    = build -> ship -> provision -> inject_secrets -> run -> healthcheck -> swap_traffic -> (fail -> rollback) -> notify
+- core      = build -> ship -> provision -> inject_secrets -> run -> healthcheck -> swap_traffic -> (fail -> rollback) -> notify
 
-server 가 풀세트, 나머지는 그 부분집합. 환경 차이의 대부분은 블록 본문이 아니라
+core 가 풀세트, 나머지는 그 부분집합. 환경 차이의 대부분은 블록 본문이 아니라
 **블록에 넘기는 인자**다. 블록이 도는 실행 기반은 **SSH runner 단일**로 확정했고(내부
 박스도 SG 22 를 열어 통일), 블록은 순수 bash 라 실행 위치에 중립이다.
 
