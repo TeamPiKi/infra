@@ -10,12 +10,12 @@ disable-model-invocation: true
 
 ## 전제 — 작업 중엔 워크트리에 "들어가 있다"
 
-세션은 로비(워크스페이스 루트)나 워크트리에서 시작하고, 작업 중엔 `git worktree add` 로 만든 `.claude/worktrees/<task>` 에 `EnterWorktree(path=)` 로 **들어가 있다**(세션 cwd 가 그 워크트리). 그래서 마무리 = "지금 들어가 있는 그 워크트리를 나가면서 지우기"다. (`/issue` 의 "현재 브랜치에서 작업" 선택은 워크트리를 만들지 않는 별개 경로다.)
+세션은 로비에서 `git worktree add` 로 만든 `.claude/worktrees/<task>` 에 `EnterWorktree(path=)` 로 들어갔거나, 처음부터 그 워크트리에서 시작했다. 어느 쪽이든 **세션 cwd 가 그 워크트리**다. 그래서 마무리 = "지금 들어가 있는 그 워크트리를 나가면서 지우기"다. (`/issue` 의 "현재 브랜치에서 작업" 선택은 워크트리를 만들지 않는 별개 경로다.)
 
 ## 원칙
 
 - **머지+clean 일 때만 제거.** uncommitted 가 있거나 브랜치가 아직 머지 안 됐으면 **거부**한다(작업 유실 방지). **session-check 없이도 단독으로 안전한지 자체 점검**한다 — 아래 절차 2 의 clean·머지 판정이 그 점검이다.
-- **제거 경로는 자리의 출처로 갈린다.** 이 세션의 `EnterWorktree` 가 만든 자리는 `ExitWorktree({action:"remove"})` 가 나가기·삭제·cwd 복원을 한 번에 한다. `path=` 로 들어간 자리(`/issue`·로비 규칙의 정상 경로)는 도구가 거부하므로 절차 6 의 `git worktree remove` 로 지운다.
+- **제거는 절차 4-6 순서다.** `ExitWorktree({action:"remove"})` 를 먼저 부르고, `path=` 로 들어간 자리(정상 경로)는 도구가 거부하므로 절차 6 의 `git worktree remove` 로 지운다.
 - **현재 작업 1개만.** 다른 워크트리·머지된 다른 stale 브랜치는 안 건드린다(별도 세션 몫).
 - **다른 세션이 쓰는 워크트리는 제거하지 않는다.** `ExitWorktree({action:"remove"})` 의 "not the owner" 거부는 남의 자리라는 뜻이 아니다. 이 세션의 `EnterWorktree` 가 만들지 않은 자리라는 뜻이고, `/issue` 의 정상 경로(`git worktree add` + `EnterWorktree({path})`)로 만든 자리는 전부 여기 해당한다. 남의 자리인지는 두 신호로 본다. 세션 레지스트리(`~/.claude/sessions/*.json`)에 살아 있는 다른 세션의 cwd 가 이 워크트리 안에 있는가, 그리고 `git worktree remove` 가 liveness lock 으로 거부하는가(도구가 `name=` 으로 만든 자리에만 lock 이 걸린다. 실측: `path` 로 들어간 자리 18개 중 lock 0개). 둘 다 아니면 아래 절차의 fallback 으로 직접 지운다.
 - **임시파일도 함께 정리한다.** 워크트리를 제거할 때, 이 브랜치가 `/tmp` 에 남긴 `/pr` 임시파일(`pr_body_$SLUG.md`, `SLUG` = `<repo>_<브랜치>` — `/pr` 0단계와 같은 규칙)도 지운다. **현재 브랜치 것만** — 동시에 도는 다른 세션의 파일은 안 건드린다("현재 1개만"과 같은 결). `session-close` 를 안 거치고 떠난 세션·중단 작업의 누수는 다음 `/pr` 진입의 mtime prune 이 회수한다.
