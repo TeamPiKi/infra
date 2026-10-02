@@ -23,12 +23,10 @@ PiKi 네 repo(core / extractor / renderer / infra)에
 
 세 서비스의 배포는 "같은 블록들의 다른 부분집합 + 다른 파라미터"로 표현된다.
 
-- renderer  = build -> ship -> run -> healthcheck
-- extractor = build -> ship -> inject_secrets -> run -> healthcheck
-- core      = build -> ship -> provision -> inject_secrets -> run -> healthcheck -> swap_traffic -> (fail -> rollback) -> notify
+각 서비스의 부분집합은 그 repo 의 `.github/workflows/deploy.yml` 이 정본이다. core·extractor 는
+blue-green(`deploy_slot.sh`), renderer 는 단일 컨테이너(`run_container.sh`)다.
 
-core 가 풀세트, 나머지는 그 부분집합. 환경 차이의 대부분은 블록 본문이 아니라
-**블록에 넘기는 인자**다. 블록이 도는 실행 기반은 **SSH runner 단일**로 확정했고(내부
+환경 차이의 대부분은 블록 본문이 아니라 **블록에 넘기는 인자**다. 블록이 도는 실행 기반은 **SSH runner 단일**로 확정했고(내부
 박스도 SG 22 를 열어 통일), 블록은 순수 bash 라 실행 위치에 중립이다.
 
 ## 구조
@@ -39,9 +37,9 @@ infra/
                  # 배포 갈래(blocks)는 설치 대상이 아니다 — 각 서비스 deploy 가 원격 fetch 로 소비.
                  # contracts 도 산문은 같지만, 기계가 읽는 code 카탈로그만 소비 repo 의
                  # shared-infra/contracts 로 설치한다 (로컬 참조 편의 — CI 는 checkout 으로 직접 받는다)
-  conventions/   # 규약 (이미 통일된 기준선 + 이 repo 자산의 작성 규칙)
+  conventions/   # 규약 (서비스 공통 기준선 + 이 repo 자산의 작성 규칙)
     infra.md     # terraform state·컨테이너 배포단위·네트워크 격리
-    blocks.md    # 블록 작성 원칙 (실행위치 중립·값 미소유·종료코드·셀프검증)
+    blocks.md    # 블록 작성 원칙 (실행위치 중립·서비스별 값은 호출부·종료코드·셀프검증)
     testing.md   # 테스트 컨벤션 원칙 (스택 무관 + JVM/Spring 공통) — install.sh 가 소비 repo 의
                  # .claude/rules/testing-principles.md 로 설치, 언어 바인딩은 각 repo 소유
     writing.md   # 개조식 작성 규약 (commit·PR·issue 본문의 문체·뎁스·라벨) — install.sh 가 스킬이 깔리는 모든 곳
