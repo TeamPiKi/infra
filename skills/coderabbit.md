@@ -62,7 +62,7 @@ gh api --paginate "repos/$NWO/pulls/$PR/reviews" \
   --jq '.[] | select(((.user.login // "") | startswith("coderabbitai")) and ((.body // "") | length > 0)) | .body'
 ```
 
-출력된 body 를 읽고 `🧹 Nitpick comments` 등 접힌 코멘트를 건별 평가한다. nitpick 은 thread 가 아니라 **resolve 대상이 아니므로**, 반영하면 커밋 + PR `## Updates`(또는 PR 일반 코멘트)로 처리 사실을 남긴다.
+출력된 body 를 읽고 `🧹 Nitpick comments` 등 접힌 코멘트를 건별 평가한다. nitpick 은 thread 가 아니라 **resolve 대상이 아니므로**, 반영하면 커밋하고 PR 일반 코멘트로 처리 사실을 남긴다(PR 본문에 `## Updates` 섹션은 두지 않는다).
 
 ### 2. 각 CodeRabbit thread 에 reply
 
