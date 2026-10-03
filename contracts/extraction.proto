@@ -1,6 +1,5 @@
-// 추출 API 계약의 와이어 정본. 모양과 필드 의미 둘 다 이 파일이 갖는다.
-// 행동 계약(응답 3갈래·타임아웃 예산·진화 규칙)은 extraction-api.md, 실패 code 분류는 extraction-error-codes.yaml.
-// 필드명은 protobuf JSON 매핑이 현행 JSON 과 일치하도록 선택 - 생성 클래스 소비자와 Jackson DTO 소비자의 혼재 허용.
+// 추출 API 계약의 와이어 정본. 모양과 필드 의미를 이 파일이 갖는다.
+// 동작 규칙은 extraction-api.md, 실패 code 분류는 extraction-error-codes.yaml.
 
 syntax = "proto3";
 
@@ -10,41 +9,38 @@ option java_multiple_files = true;
 option java_package = "com.depromeet.piki.contracts.extraction.v1";
 
 message LinkExtractionRequest {
-  // 상품 페이지 URL. https 스킴 한정. 호출자 등록 경계의 검증 이후 Extractor 경계의 재검증 대상(다층 방어).
+  // 상품 페이지 URL. https 만. Extractor 도 다시 검증(다층 방어).
   string url = 1;
-  // 플랫폼의 명시적 허락 여부. 판정 원장은 호출자 DB, Extractor·렌더 서비스는 요청 단위 수신자.
-  // 이 값을 쓰는 곳은 렌더 서비스뿐. 추출 경로 자체는 이 값과 무관하게 동일.
-  // 생략은 false(허락 없음)로 정규화 - 이 필드를 모르는 구버전 호출자도 안전한 쪽으로만 어긋나는 fail-safe.
+  // 플랫폼의 명시적 허락 여부. 판정 원장은 호출자, 쓰는 곳은 렌더 서비스뿐.
+  // 생략은 false - 이 필드를 모르는 호출자가 안전한 쪽으로만 어긋남.
   bool authorized = 2;
-  // 이 요청의 LLM 추출에 쓸 모델. 정책 원장은 호출자 DB(백오피스).
-  // 요청 단위 수신의 이유는 박스 한 대의 환경 공유 - 환경변수 고정 시 dev 변경이 prod 파싱까지 덮는 사고.
-  // 생략·빈 문자열이면 Extractor 의 기본 모델.
+  // LLM 추출에 쓸 모델. 생략·빈 문자열이면 Extractor 기본 모델.
+  // 요청으로 받는 이유는 박스 한 대의 환경 공유 - 환경변수면 dev 변경이 prod 파싱까지 덮음.
   string model = 3;
 }
 
-// image 경로 요청. 성공·실패 body 는 link 경로와 공유(ExtractionResult·ExtractionFailure).
+// image 경로 요청. 응답은 link 경로와 공유.
 message ImageExtractionRequest {
-  // raw 원본이 놓인 버킷. 요청 단위 수신의 이유는 박스 한 대의 환경 공유 - 환경마다 이미지 버킷이 달라 고정 config 불가.
+  // raw 원본이 놓인 버킷. 환경마다 버킷이 달라 요청으로 받음.
   string bucket = 1;
-  // raw 원본 object key. 등록 시 호출자가 durable 적재한 것.
+  // raw 원본 object key.
   string key = 2;
-  // 이 요청의 OCR 추출에 쓸 모델. 생략·대체 규약은 LinkExtractionRequest.model 과 동일.
-  // 축은 link 와 별개 - 이미지는 보는 능력이 필요해 link 에 맞는 모델이 여기서 맞지 않을 수 있음.
+  // OCR 추출에 쓸 모델. 규약은 link 와 같고 지정 축만 별개 - 이미지는 보는 능력이 필요.
   string model = 3;
 }
 
 // 모델 프로브 요청. 통과는 body 없는 200, 확정 거절은 ExtractionFailure.
 message ModelProbeRequest {
-  // 프로브 대상 경로. 경로별 분리의 이유는 LLM 요청 와이어 차이 - 한쪽에서 통과한 모델이 다른 쪽에서 400 가능.
+  // 프로브 대상 경로. 경로별로 LLM 요청 모양이 달라 한쪽에서 통과한 모델이 다른 쪽에서 400 가능.
   enum Target {
     TARGET_UNSPECIFIED = 0;
     LINK = 1;
     IMAGE = 2;
   }
 
-  // 확인할 모델 이름. 필수 - 빈 값은 400.
+  // 필수. 빈 값은 400.
   string model = 1;
-  // 필수 - 생략과 모르는 값은 둘 다 UNSPECIFIED 로 읽혀 400.
+  // 필수. 생략·모르는 값은 UNSPECIFIED 로 읽혀 400.
   Target target = 2;
 }
 
@@ -57,17 +53,17 @@ enum ExtractionMethod {
   LLM = 2;
 }
 
-// 성공 200 body. 값 필드는 전부 선택이고 보장은 name(non-blank)·image_url·current_price 중 하나 이상.
-// 하나도 못 채운 경우만 422 UNTRUSTWORTHY_VALUE, 일부만 채운 결과는 채운 값 그대로 200.
-// optional 선언의 이유는 "안 채움"과 "0·빈 문자열"의 구분. 안 채운 필드는 JSON 에서 생략.
+// 성공 200 body. name(non-blank)·image_url·current_price 중 하나 이상을 보장.
+// 하나도 못 채우면 422 UNTRUSTWORTHY_VALUE, 일부만 채우면 그대로 200.
+// optional 은 "안 채움"과 "0·빈 문자열"의 구분용. 안 채운 필드는 JSON 에서 생략.
 message ExtractionResult {
   optional string name = 1;
   optional string image_url = 2;
   optional int32 current_price = 3;
-  // ISO 4217. 단독으로는 "채웠다"의 근거에서 제외 - 호출자 READY 필수 집합 밖.
+  // ISO 4217. 이 값만으로는 "채웠다"로 치지 않음.
   optional string currency = 4;
-  // 리다이렉트 귀결점. 호출자의 상품 정체성(canonical) 정규화 입력.
-  // 단축링크는 경로가 불투명 코드라 이 값 없이 같은 상품 식별 불가. link 경로 필수, image 경로 없음.
+  // 리다이렉트 귀결점. 호출자의 상품 정체성 정규화 입력 - 단축링크는 이 값 없이 식별 불가.
+  // link 경로 필수, image 경로 없음.
   optional string final_url = 5;
   ExtractionMethod method = 6;
 }
