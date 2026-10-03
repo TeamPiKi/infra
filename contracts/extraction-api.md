@@ -5,7 +5,7 @@ core(호출자)와 extractor(추출 서비스) 사이의 API 계약. 구현(spri
 
 소비자는 core 의 파싱 워커 하나뿐이다. 공개 API 가 아니며 보안그룹으로 내부망에서만 접근한다(별도 인증 없음).
 
-**요청·응답의 모양(필드·타입·enum 이름)의 정본은 `contracts/extraction.proto`** 다(파일럿: link 경로).
+**요청·응답의 모양(필드·타입·enum 이름)의 정본은 `contracts/extraction.proto`** 다.
 소비 repo 는 빌드 시점에 이 파일에서 클래스를 생성해 쓰고, 와이어는 protobuf 의 JSON 매핑이라 아래
 JSON 예시와 바이트 단위로 같다. 모양이 이 문서와 어긋나면 proto 가 옳다 — 이 문서는 의미를 맡는다.
 
@@ -93,15 +93,12 @@ JSON 예시와 바이트 단위로 같다. 모양이 이 문서와 어긋나면 
 { "bucket": "dev-piki-images-<ACCOUNT_ID>", "key": "items/raw/0f3a....png", "model": "gemini-3.1-flash-lite" }
 ```
 
-- **`bucket` 을 요청이 준다** — Extractor 는 여러 환경의 트래픽을 받고 각 환경의 이미지 버킷이 다르다.
-  버킷을 고정 config 로 두지 않고 요청별로 받아 버킷 무관하게 동작한다. IAM 은 이미지 버킷 와일드카드로
-  전 환경을 덮는다.
-- `key`: raw 원본 object key(등록 시 core 가 `items/raw/{uuid}.{ext}` 로 durable 적재한 것).
-- `model` (선택): link 와 같은 규약이되 **축이 갈린다** — 이미지 경로에는 이미지용 지정만 온다. 링크는
-  텍스트와 JSON 스키마를 다루고 이미지는 보는 능력이 필요해, 한쪽에 맞는 모델이 다른 쪽에 맞지 않을 수
-  있기 때문이다. 대체 규칙(404 만 기본 모델로)도 link 와 같다.
+- 필드의 의미는 link 와 같이 `extraction.proto` 의 주석이 정본이다.
+- Extractor 는 버킷 무관하게 동작한다. IAM 은 이미지 버킷 와일드카드로 전 환경을 덮는다.
+- `key` 는 core 가 등록 시 `items/raw/{uuid}.{ext}` 로 적재한다.
+- 모델 대체 규칙(404 만 기본 모델로)은 link 와 같다.
 
-성공 200 은 link 경로와 **동일한 필드 모양**이다(`finalUrl` 만 null). Extractor 가
+성공 200 은 link 경로와 **동일한 필드 모양**이다(`finalUrl` 만 없다). Extractor 가
 `download(bucket,key) -> OCR 추출 -> bbox 크롭(불가 시 원본) -> upload(bucket, items/{uuid}.{ext})` 를
 다 하고, 업로드한 결과 이미지의 public URL 을 `imageUrl` 로 돌려준다.
 
@@ -127,12 +124,12 @@ link 와 같은 `UNTRUSTWORTHY_VALUE` 를 재사용한다.
 { "model": "gemini-3.1-flash-lite", "target": "LINK" }
 ```
 
-- `model` (필수): 확인할 모델 이름. 아는 모델 목록을 Extractor 코드에 박지 않는 것이 이 엔드포인트의
-  존재 이유다 — allowlist 를 박으면 새 모델이 나올 때마다 Extractor 배포가 필요해져 "배포 없이 바꾼다"는
-  목적이 무너진다. 유효성은 런타임 실측이 판정한다.
-- `target` (필수): `LINK` 또는 `IMAGE`. 두 경로는 요청 wire 가 달라(link 는 `responseJsonSchema` 에
-  소문자 type, image 는 `responseSchema` 에 대문자 enum type 과 thinkingConfig) 한쪽에서 통과한 모델이
-  다른 쪽에서 400 일 수 있다.
+- 필드의 의미는 `extraction.proto` 의 주석이 정본이다. 두 필드 모두 필수다.
+- 아는 모델 목록을 Extractor 코드에 박지 않는 것이 이 엔드포인트의 존재 이유다 — allowlist 를 박으면
+  새 모델이 나올 때마다 Extractor 배포가 필요해져 "배포 없이 바꾼다"는 목적이 무너진다. 유효성은
+  런타임 실측이 판정한다.
+- 두 경로는 LLM 요청 wire 가 다르다(link 는 `responseJsonSchema` 에 소문자 type, image 는
+  `responseSchema` 에 대문자 enum type 과 thinkingConfig).
 
 **판정은 메타 조회가 아니라 그 경로의 실제 generateContent 호출이다.** 모델 존재만 확인하면 요청 스키마
 비호환(400)을 못 거르는데, 400 은 추출 경로에서 대체 대상이 아니라 곧 파싱 전건 실패다. 게이트가 정작
