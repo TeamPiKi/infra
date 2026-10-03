@@ -9,7 +9,7 @@
   않고, 각 박스의 Alloy 가 자기 박스의 컨테이너·호스트만 수집한다.
 - **config·기동 블록의 SSOT 는 이 repo** — `blocks/alloy/config.alloy`(컴포넌트 그래프),
   `blocks/alloy/provision-alloy.sh`(기동 블록), `blocks/alloy/provision-alloy-ssm.sh`(SSM 자격
-  로드 + 위 호출). 블록은 값을 담지 않는다 — 박스 값(`--box`·`--environment`)은 호출부가 준다.
+  로드 + 위 호출). 서비스별 값은 블록이 아니라 호출부가 준다(박스 값 `--box`·`--environment`).
 - **값(자격증명·환경)은 호출부/SSM 주입** — 아래 env 로 주입한다. secret 미등록 박스는
   provision-alloy.sh 가 기동을 skip 한다(빈 endpoint 로 부팅해 crash loop 하지 않는다).
 
