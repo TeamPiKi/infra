@@ -22,6 +22,32 @@ message LinkExtractionRequest {
   string model = 3;
 }
 
+// image 경로 요청. 성공·실패 body 는 link 경로와 공유(ExtractionResult·ExtractionFailure).
+message ImageExtractionRequest {
+  // raw 원본이 놓인 버킷. 요청 단위 수신의 이유는 박스 한 대의 환경 공유 - 환경마다 이미지 버킷이 달라 고정 config 불가.
+  string bucket = 1;
+  // raw 원본 object key. 등록 시 호출자가 durable 적재한 것.
+  string key = 2;
+  // 이 요청의 OCR 추출에 쓸 모델. 생략·대체 규약은 LinkExtractionRequest.model 과 동일.
+  // 축은 link 와 별개 - 이미지는 보는 능력이 필요해 link 에 맞는 모델이 여기서 맞지 않을 수 있음.
+  string model = 3;
+}
+
+// 모델 프로브 요청. 통과는 body 없는 200, 확정 거절은 ExtractionFailure.
+message ModelProbeRequest {
+  // 프로브 대상 경로. 경로별 분리의 이유는 LLM 요청 와이어 차이 - 한쪽에서 통과한 모델이 다른 쪽에서 400 가능.
+  enum Target {
+    TARGET_UNSPECIFIED = 0;
+    LINK = 1;
+    IMAGE = 2;
+  }
+
+  // 확인할 모델 이름. 필수 - 빈 값은 400.
+  string model = 1;
+  // 필수 - 생략과 모르는 값은 둘 다 UNSPECIFIED 로 읽혀 400.
+  Target target = 2;
+}
+
 // 값을 만든 추출 경로. 호출자의 snapshot 출처(SERVER/SERVER_LLM) 구분 근거.
 enum ExtractionMethod {
   EXTRACTION_METHOD_UNSPECIFIED = 0;
