@@ -1,4 +1,7 @@
-# 추출 실패 code 카탈로그 (정본)
+# 추출 실패 code 카탈로그 (과도기 사본)
+#
+# 정본은 extraction.proto 의 enum 값 옵션이다. 소비 repo 의 메타 테스트가 옵션 읽기로 넘어가면 이 파일을 지운다
+# (TeamPiKi/infra#113). 그때까지 code 를 고치면 양쪽을 함께 고친다.
 #
 # core 와 extractor 가 주고받는 실패 code 의 전수 목록. 각 code 가 무엇을 뜻하는지는
 # contracts/extraction-api.md 가 설명하고, 이 파일은 목록과 기계 판정용 속성만 갖는다.
