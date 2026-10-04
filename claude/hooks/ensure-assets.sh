@@ -4,13 +4,12 @@
 # 왜 필요한가: SessionStart 부트스트랩은 **세션 시작 시점의 repo 한 곳**에만 자산을 깐다
 # (install.sh 가 repo_root 를 그때의 `git rev-parse --show-toplevel` 로 잡는다). 그래서
 # EnterWorktree 로 워크트리를 옮기거나, core 세션에서 extractor·renderer 를 만지면 그곳엔
-# 스킬(.claude/commands)·규약(.claude/rules)·계약 카탈로그(shared-infra/contracts)가 없다.
+# 스킬(.claude/commands)·규약(.claude/rules)·계약 정본(shared-infra/contracts)이 없다.
 # 워크트리가 특히 잘 걸린다: `git worktree add` 는 git 이 추적하는 파일만 체크아웃하는데
 # 이 자산들은 gitignore 대상이라 따라오지 않는다.
 #
-# 그 상태로 테스트를 돌리면 카탈로그를 읽는 메타 테스트가 깨지는데, 증상이 코드 문제처럼 보여
-# 오진하기 쉽다 (TeamPiKi/core#950 작업 중 실제로 겪었다). 그 테스트는 파일이 없으면 skip 하지
-# 않고 일부러 실패시키므로 — 없다고 넘어가면 계약 강제가 조용히 사라진다 — 계속 같은 자리에서 걸린다.
+# 그 상태로 빌드하면 계약 proto 가 없어 컴파일이 깨지는데, 증상이 코드 문제처럼 보여
+# 오진하기 쉽다 (TeamPiKi/core#950 작업 중 실제로 겪었다).
 #
 # 언제 도는가: **문제가 드러나는 두 순간**에 건다.
 #   PostToolUse EnterWorktree — 폴더가 바뀌는 그 순간이 곧 자산이 없어지는 순간이다.
@@ -47,22 +46,22 @@ done
 [ "$root" != "/" ] || exit 0
 
 # ---- 이미 다 깔려 있으면 여기서 끝 (정상 경로) ----
-# 자산 하나만 보면 **부분 손상**을 놓친다. 실제로 스킬은 있는데 카탈로그만 없는 워크트리가 있었다
-# (카탈로그 설치가 나중에 추가돼, 그 전에 자산을 받은 위치는 스킬만 가진 채 남는다). 그래서
+# 자산 하나만 보면 **부분 손상**을 놓친다. 실제로 스킬은 있는데 계약만 없는 워크트리가 있었다
+# (계약 설치가 나중에 추가돼, 그 전에 자산을 받은 위치는 스킬만 가진 채 남는다). 그래서
 # 종류별로 하나씩 본다 — 파일 존재 검사라 몇 개를 보든 사실상 공짜다.
 #
 # 매니페스트는 sentinel 로 쓸 수 없다: --git-common-dir 기준이라 워크트리 전체가 공유하고,
 # 마지막에 실행한 쪽 경로로 덮여 "이 위치에 깔렸는가" 를 답하지 못한다.
 #
-# 소비 repo 판별은 CLAUDE.md 존재로 근사한다. install.sh 가 규약·카탈로그를 infra 자신에서 제외하는
+# 소비 repo 판별은 CLAUDE.md 존재로 근사한다. install.sh 가 규약·계약을 infra 자신에서 제외하는
 # 근거가 바로 "import 할 CLAUDE.md 가 없다" 이므로 같은 기준이고, origin 을 묻지 않아 프로세스도 안 뜬다.
-# 워크스페이스 루트(로비 규칙이 깔린 곳)는 규약·카탈로그를 일부러 안 깐다(install.sh 의 workspace 분기).
+# 워크스페이스 루트(로비 규칙이 깔린 곳)는 규약·계약을 일부러 안 깐다(install.sh 의 workspace 분기).
 # 그걸 "없다"로 읽으면 매 프롬프트마다 git 을 띄우므로 스킬만 본다.
 need=0
 [ -f "$root/.claude/commands/pr.md" ] || need=1
 if [ -f "$root/CLAUDE.md" ] && [ ! -f "$root/.claude/rules/piki-workspace.md" ]; then
   [ -f "$root/.claude/rules/testing-principles.md" ] || need=1
-  [ -f "$root/shared-infra/contracts/extraction-error-codes.yaml" ] || need=1
+  [ -f "$root/shared-infra/contracts/extraction.proto" ] || need=1
 fi
 [ "$need" = 0 ] && exit 0
 
