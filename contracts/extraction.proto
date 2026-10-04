@@ -6,10 +6,38 @@ syntax = "proto3";
 package piki.extraction.v1;
 
 import "google/protobuf/descriptor.proto";
+import "google/protobuf/empty.proto";
 
 option java_multiple_files = true;
 option java_outer_classname = "ExtractionProto";
 option java_package = "com.depromeet.piki.contracts.extraction.v1";
+
+extend google.protobuf.ServiceOptions {
+  // 호출자의 HTTP read 타임아웃(초). 전 경로 공용. Extractor 내부 예산 합계는 이 값보다 작아야 함.
+  // 호출자 쪽 상한은 작업 큐 stale 판정 - 그보다 길면 recover 가 유령 중복 발주를 냄.
+  int32 caller_read_timeout_seconds = 50101;
+}
+
+extend google.protobuf.MethodOptions {
+  // HTTP POST 경로. 전송은 gRPC 가 아니라 JSON over HTTP.
+  string http_post = 50111;
+}
+
+// 엔드포인트와 요청·응답 짝의 선언. 응답 갈래(2xx·422·그 외)의 뜻은 extraction-api.md.
+service ExtractionService {
+  option (caller_read_timeout_seconds) = 55;
+
+  rpc LinkExtraction(LinkExtractionRequest) returns (ExtractionResult) {
+    option (http_post) = "/internal/extractions/link";
+  }
+  rpc ImageExtraction(ImageExtractionRequest) returns (ExtractionResult) {
+    option (http_post) = "/internal/extractions/image";
+  }
+  // 통과는 body 없는 200.
+  rpc ModelProbe(ModelProbeRequest) returns (google.protobuf.Empty) {
+    option (http_post) = "/internal/models/probe";
+  }
+}
 
 message LinkExtractionRequest {
   // 상품 페이지 URL. https 만. Extractor 도 다시 검증(다층 방어).
