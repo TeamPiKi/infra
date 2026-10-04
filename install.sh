@@ -67,13 +67,12 @@ install_asset() {
 "
 }
 
-# sh 는 깨진 정본이 소비 repo 훅을 못 깨게 bash -n 을 건다. yaml·proto 는 파서를 전제할 수 없어 머리 한 줄만
+# sh 는 깨진 정본이 소비 repo 훅을 못 깨게 bash -n 을 건다. proto 는 파서를 전제할 수 없어 머리 한 줄만
 # 보는데, 이게 "받긴 받았지만 그 계약이 아닌 것"(에러 페이지·잘린 본문)을 거르는 유일한 층이다.
 validate_asset() {
   case "$2" in
     sh)   bash -n "$1" 2>/dev/null ;;
     md)   true ;;
-    yaml) grep -q '^codes:' "$1" ;;
     proto) grep -q '^syntax = "proto3";' "$1" ;;
     *)    false ;;   # 알 수 없는 유형은 설치하지 않는다 (안전)
   esac
@@ -218,14 +217,13 @@ if [ "$workspace" = 1 ]; then
   install_asset workspace/piki-workspace.md "$workspace_rules_dir/piki-workspace.md" 444 md
 fi
 
-# 계약 카탈로그. 이 설치는 로컬 참조용 편의일 뿐 CI 강제 근거가 아니다(CI 에선 워크플로의 checkout 이
+# 계약 정본. 이 설치는 로컬 참조용 편의일 뿐 CI 강제 근거가 아니다(CI 에선 워크플로의 checkout 이
 # 같은 자리에 푼다). 경로를 맞추는 이유가 그것이다: 소비 repo 의 테스트가 경로를 하나만 알면 된다.
-# 정본이 이미 손에 있는 infra 자신과, 카탈로그를 읽는 테스트가 없는 워크스페이스 루트는 제외한다.
+# 정본이 이미 손에 있는 infra 자신과, 계약을 읽는 빌드가 없는 워크스페이스 루트는 제외한다.
 # 버전 영역에 사본이 생기므로 소비 repo 는 .gitignore 에 shared-infra/ 를 둔다.
 if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   contracts_dir="$repo_root/shared-infra/contracts"
   mkdir -p "$contracts_dir"
-  install_asset contracts/extraction-error-codes.yaml "$contracts_dir/extraction-error-codes.yaml" 444 yaml
   # 소비 repo 의 빌드가 이 경로를 proto 소스로 읽는다 - 없으면 컴파일이 깨진다.
   install_asset contracts/extraction.proto "$contracts_dir/extraction.proto" 444 proto
 fi
