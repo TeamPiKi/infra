@@ -5,8 +5,7 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 
 | 정본 | 맡는 것 |
 |---|---|
-| `contracts/extraction.proto` | 요청·응답의 모양, 필드와 code 의 의미 |
-| `contracts/extraction-error-codes.yaml` | code 목록과 분류(disposition·bucket) |
+| `contracts/extraction.proto` | 요청·응답의 모양, 필드와 code 의 의미, code 분류(disposition·bucket) |
 | 이 문서 | 모양으로 표현되지 않는 동작 규칙과 그 근거 |
 
 와이어는 protobuf 의 JSON 매핑이다(필드명 lowerCamelCase, enum 은 이름 문자열).
@@ -29,7 +28,7 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 
 - 전이 판정은 HTTP status 만 쓴다. `code` 는 관측용이고, 모르는 code 여도 422 면 확정 실패다.
 - 분류할 수 없는 실패는 전부 일시로 떨어진다(fail-safe). 재시도 비용은 호출자의 attempt 상한이 바운드한다.
-- 카탈로그의 `disposition` 과 1:1 이다. `permanent` 는 422, `transient` 는 502.
+- code 의 `disposition` 옵션과 1:1 이다. `PERMANENT` 는 422, `TRANSIENT` 는 502.
 
 ## 2. 엔드포인트
 
@@ -68,17 +67,8 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 
 ## 3. bucket (확정 실패의 운영 분류)
 
-확정 실패에만 붙는다. 일시 실패는 recover 가 종결 시 집계한다.
-
-| bucket | 뜻 | 운영이 보는 것 |
-|---|---|---|
-| `not_product` | 애초에 상품 링크가 아니다 | 사용자 입력 문제. 늘어도 서비스 결함이 아니다 |
-| `unreadable` | 상품 페이지지만 우리가 읽어내지 못했다 | 렌더·에스컬레이션 커버리지 문제 |
-| `blocked` | 대상이 우리를 막았다 | 플랫폼 정책·차단 대응 대상 |
-| `extract_quality` | 읽었으나 값을 신뢰할 수 없다 | 추출 품질(프롬프트·모델·파서) 문제 |
-| `internal_error` | 우리 쪽 방어·비정상 상태로 끝났다 | 정상 요청이 여기 쌓이면 우리 버그 신호 |
-
-분류는 카탈로그가 소유한다. repo 마다 다르게 세면 지표가 조용히 어긋나고 기계가 못 잡는다.
+값과 뜻의 정본은 `extraction.proto` 의 `Bucket` enum 이다. 확정 실패에만 붙고, 일시 실패는 recover 가
+종결 시 집계한다.
 
 ## 4. 타임아웃 예산
 
@@ -102,7 +92,7 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 
 - additive-only. 필드·code 추가는 자유, 제거·의미 변경·타입 변경은 금지다(필요하면 새 경로).
   모양 위반은 CI 의 `buf breaking` 이 막는다.
-- code 를 더할 때는 카탈로그와 proto enum 을 함께 고친다. 소비 repo 의 메타 테스트가 대조한다.
+- code 는 proto enum 에 분류 옵션과 함께 더한다. 소비 repo 의 메타 테스트가 자기 매핑과 대조한다.
 - 배포 순서는 Extractor 먼저, core 나중.
 - 호출자는 모르는 응답 필드·code 를 무시한다(tolerant reader).
 
