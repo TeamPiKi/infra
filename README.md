@@ -49,6 +49,7 @@ infra/
     observability.md  # 관측 계약 (Alloy 수집·라벨·로그 형식)
     extraction-api.md            # 추출 API 계약 (core -> extractor: 응답 3갈래·동작 규칙·타임아웃 예산)
     extraction.proto             # 그 계약의 와이어 모양·code 분류 정본 (소비 repo 가 빌드 시점에 클래스 생성)
+    render.proto                 # 렌더 계약 (extractor -> renderer: 요청·응답 모양·경로·read 타임아웃)
   blocks/        # 실행 위치 중립 공유 블록 (bash 스크립트 + 관측 설정)
     healthcheck.sh
     healthcheck.test.sh

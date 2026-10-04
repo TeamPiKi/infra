@@ -226,6 +226,7 @@ if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   mkdir -p "$contracts_dir"
   # 소비 repo 의 빌드가 이 경로를 proto 소스로 읽는다 - 없으면 컴파일이 깨진다.
   install_asset contracts/extraction.proto "$contracts_dir/extraction.proto" 444 proto
+  install_asset contracts/render.proto "$contracts_dir/render.proto" 444 proto
 fi
 
 # 세션 훅·유틸은 사용자 전역 설정이라 repo 안에 둘 자리가 없다. 대신 repo 를 열 때마다 정본으로 맞춘다.
