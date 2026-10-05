@@ -1,0 +1,61 @@
+// 렌더 계약의 와이어 정본. extractor(호출자)와 renderer 사이의 모양과 필드 의미를 이 파일이 갖는다.
+// 전송은 JSON over HTTP. 필드명은 renderer 의 현행 JSON(snake_case)과 같게 고정.
+
+syntax = "proto3";
+
+package piki.render.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "RenderProto";
+option java_package = "com.depromeet.piki.contracts.render.v1";
+
+extend google.protobuf.ServiceOptions {
+  // 호출자의 HTTP read 타임아웃(초). renderer 의 렌더 기한은 이 값보다 작아야 함.
+  int32 caller_read_timeout_seconds = 50201;
+}
+
+extend google.protobuf.MethodOptions {
+  // HTTP POST 경로.
+  string http_post = 50211;
+}
+
+service RenderService {
+  option (caller_read_timeout_seconds) = 20;
+
+  rpc Render(RenderRequest) returns (RenderResponse) {
+    option (http_post) = "/render";
+  }
+}
+
+message RenderRequest {
+  // 렌더할 URL. http·https 만.
+  string url = 1;
+  // 플랫폼의 명시적 허락 여부. 판정 원장은 추출 계약의 호출자이고 여기는 전달받기만 함.
+  // 생략은 false - 이 필드를 모르는 호출자가 안전한 쪽으로만 어긋남.
+  bool authorized = 2;
+  // true 면 응답 JSON 을 zstd 로 압축한 바이트로 반환. 압축 여부의 판별은 응답 헤더 X-Encoding.
+  bool compress = 3;
+}
+
+// 판단 없이 거쳐 간 홉을 그대로 돌려줌. 어느 홉이 상품이고 차단인지는 호출자가 정함.
+// 브라우저 작업 실패도 200 으로 오고 error 로 구분.
+message RenderResponse {
+  // 브라우저 작업 실패 원문. 없으면 성공.
+  optional string error = 1;
+  // 홉 상한에 걸려 이동을 중단함.
+  bool hop_cap_hit = 2 [json_name = "hop_cap_hit"];
+  repeated Hop hops = 3;
+}
+
+// 브라우저가 거쳐 간 문서 하나.
+message Hop {
+  string url = 1;
+  optional int32 status = 2;
+  map<string, string> headers = 3;
+  // 서버가 준 원문. 3xx 는 빈값.
+  string body = 4;
+  // 정착한 문서를 연 홉에만 정착 후의 DOM. 나머지 홉은 빈값.
+  string dom = 5;
+}
