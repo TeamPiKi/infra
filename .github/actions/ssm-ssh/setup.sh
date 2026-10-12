@@ -45,6 +45,7 @@ KEY_FILE="$HOME/.ssh/$NAME.key"
 printf '%s\n' "$SSH_KEY" > "$KEY_FILE"
 
 # accept-new: 접속 대상은 SSM 이 인스턴스 id 로 고정하므로 처음 보는 호스트 키를 받아들인다.
+# ConnectTimeout: ProxyCommand 를 써도 SSH 핸드셰이크 대기에 걸려, 열리지 않는 SSM 채널을 끊는다.
 # ServerAliveInterval: Session Manager 는 클라이언트 입력이 20분 없으면 세션을 끊는다.
 cat >> "$HOME/.ssh/config" <<EOF
 Host $NAME
@@ -53,6 +54,7 @@ Host $NAME
   IdentityFile $KEY_FILE
   IdentitiesOnly yes
   StrictHostKeyChecking accept-new
+  ConnectTimeout 30
   ServerAliveInterval 30
   ProxyCommand aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p
 EOF
