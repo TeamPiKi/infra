@@ -62,6 +62,9 @@ jobs:
       - name: Run workspace-init.sh self-test
         run: ./workspace/workspace-init.test.sh
 
+      - name: Run ssm-ssh setup.sh self-test
+        run: ./.github/actions/ssm-ssh/setup.test.sh
+
   contracts-proto:
     name: contracts-proto
     runs-on: ubuntu-latest

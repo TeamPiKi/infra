@@ -1,0 +1,39 @@
+name: ssm-ssh
+description: >-
+  Name 태그로 찾은 EC2 박스에 SSM Session Manager 를 거쳐 SSH 하도록 러너를 준비한다.
+  박스 SG 에 22 번 인바운드가 필요 없다. 뒤 스텝은 outputs.host 를 대상으로 ssh·scp 를 그대로 쓴다.
+  호출자는 앞에서 AWS 자격을 잡고, 그 역할에 ec2:DescribeInstances 와
+  대상 인스턴스·AWS-StartSSHSession 문서에 대한 ssm:StartSession 을 준다.
+
+inputs:
+  instance-name:
+    description: 대상 인스턴스의 Name 태그. 실행 중인 인스턴스가 정확히 하나여야 한다.
+    required: true
+  user:
+    description: 박스 로그인 사용자
+    required: true
+  ssh-key:
+    description: 박스 authorized_keys 에 등록된 개인 키
+    required: true
+
+outputs:
+  host:
+    description: ssh·scp 에 쓸 호스트 별칭
+    value: ${{ inputs.instance-name }}
+  instance-id:
+    description: 찾은 인스턴스 id
+    value: ${{ steps.setup.outputs.instance-id }}
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare SSH over SSM
+      id: setup
+      shell: bash
+      env:
+        INSTANCE_NAME: ${{ inputs.instance-name }}
+        LOGIN_USER: ${{ inputs.user }}
+        SSH_KEY: ${{ inputs.ssh-key }}
+      run: |
+        INSTANCE_ID=$("$GITHUB_ACTION_PATH/setup.sh" --instance-name "$INSTANCE_NAME" --user "$LOGIN_USER")
+        echo "instance-id=$INSTANCE_ID" >> "$GITHUB_OUTPUT"

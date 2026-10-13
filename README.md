@@ -26,8 +26,8 @@ PiKi 네 repo(core / extractor / renderer / infra)에
 각 서비스의 부분집합은 그 repo 의 `.github/workflows/deploy.yml` 이 정본이다. core·extractor 는
 blue-green(`deploy_slot.sh`), renderer 는 단일 컨테이너(`run_container.sh`)다.
 
-환경 차이의 대부분은 블록 본문이 아니라 **블록에 넘기는 인자**다. 블록이 도는 실행 기반은 **SSH runner 단일**로 확정했고(내부
-박스도 SG 22 를 열어 통일), 블록은 순수 bash 라 실행 위치에 중립이다.
+환경 차이의 대부분은 블록 본문이 아니라 **블록에 넘기는 인자**다. 블록이 도는 실행 기반은 **SSH runner 단일**로 확정했고,
+러너는 SSM Session Manager 를 거쳐 박스에 붙는다(`ssm-ssh`, 박스 SG 에 22 번 인바운드 없음). 블록은 순수 bash 라 실행 위치에 중립이다.
 
 ## 구조
 
@@ -71,4 +71,5 @@ infra/
   .github/actions/    # GitHub Actions 모양의 공유 블록 — 소비 repo 워크플로가 `TeamPiKi/infra/.github/actions/<이름>@main` 으로 조립
     app-jar-upload/   # CI 가 부트 JAR 을 아티팩트로 올림 (plain jar 제외·보존 3일)
     app-jar-resolve/  # 배포 러너가 JAR 을 확보 — workflow_run 이면 트리거 run 의 아티팩트, 아니면 러너 빌드
+    ssm-ssh/          # Name 태그로 찾은 박스에 SSM Session Manager 경유 SSH 를 준비 — 뒤 스텝은 ssh·scp 를 그대로 쓴다
 ```
