@@ -73,6 +73,35 @@ eval "$DECIDED"
 check "eval 소비: ACTIVE" "green" "${ACTIVE:-}"
 check "eval 소비: INACTIVE_PORT" "18090" "${INACTIVE_PORT:-}"
 
+# 9. 옛 슬롯: 상태 파일이 옛 포트면 그 이름이 ACTIVE, 새 컨테이너는 반대 이름·새 포트
+LEGACY=(--slot-a blue:18080 --slot-b green:28080 --legacy-slot blue:8080 --legacy-slot green:8081)
+echo "server localhost:8080;" >"$WORKDIR/up.conf"
+OUT=$("$DECIDE" --state-file "$WORKDIR/up.conf" "${LEGACY[@]}")
+check "옛 a 슬롯 서빙 -> b 새 포트" "ACTIVE=blue ACTIVE_PORT=8080 INACTIVE=green INACTIVE_PORT=28080" "$OUT"
+echo "server localhost:8081;" >"$WORKDIR/up.conf"
+OUT=$("$DECIDE" --state-file "$WORKDIR/up.conf" "${LEGACY[@]}")
+check "옛 b 슬롯 서빙 -> a 새 포트" "ACTIVE=green ACTIVE_PORT=8081 INACTIVE=blue INACTIVE_PORT=18080" "$OUT"
+
+# 10. 전환 뒤 옛 슬롯 인자가 남아도 새 포트 판정이 이긴다
+echo "server 127.0.0.1:28080;" >"$WORKDIR/up.conf"
+OUT=$("$DECIDE" --state-file "$WORKDIR/up.conf" "${LEGACY[@]}")
+check "새 포트가 옛 슬롯보다 우선" "ACTIVE=green ACTIVE_PORT=28080 INACTIVE=blue INACTIVE_PORT=18080" "$OUT"
+
+# 11. 옛 슬롯 인자가 있어도 모르는 포트·상태 파일 없음은 부트스트랩
+echo "server 127.0.0.1:9999;" >"$WORKDIR/up.conf"
+OUT=$("$DECIDE" --state-file "$WORKDIR/up.conf" "${LEGACY[@]}")
+check "옛 슬롯 인자 + 모르는 포트 -> 부트스트랩" "ACTIVE= ACTIVE_PORT= INACTIVE=blue INACTIVE_PORT=18080" "$OUT"
+OUT=$("$DECIDE" --state-file "$WORKDIR/none.conf" "${LEGACY[@]}")
+check "옛 슬롯 인자 + 상태 파일 없음 -> 부트스트랩" "ACTIVE= ACTIVE_PORT= INACTIVE=blue INACTIVE_PORT=18080" "$OUT"
+
+# 12. 옛 슬롯 인자 오류
+"$DECIDE" --state-file "$WORKDIR/up.conf" --slot-a blue:18080 --slot-b green:28080 --legacy-slot red:8080 >/dev/null 2>&1
+check "슬롯 이름 밖의 옛 슬롯 -> exit 2" 2 "$?"
+"$DECIDE" --state-file "$WORKDIR/up.conf" --slot-a blue:18080 --slot-b green:28080 --legacy-slot 'bl;ue:8080' >/dev/null 2>&1
+check "허용목록 밖 옛 슬롯 이름 -> exit 2" 2 "$?"
+"$DECIDE" --state-file "$WORKDIR/up.conf" --slot-a blue:18080 --slot-b green:28080 --legacy-slot blue >/dev/null 2>&1
+check "콜론 없는 옛 슬롯 -> exit 2" 2 "$?"
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES case(s) failed" >&2
   exit 1

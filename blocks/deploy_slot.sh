@@ -25,7 +25,8 @@
 # 인자:
 #   --state-file        (필수) upstream 상태 파일 경로
 #   --slot-a / --slot-b (필수) NAME:PORT 둘. slot_decide 계약과 같다
-#   --name-prefix       (필수) 컨테이너 이름 접두사. 실제 이름은 <접두사>-<슬롯 이름>
+#   --legacy-slot       (선택, 반복) 슬롯 포트를 바꾸는 배포의 옛 NAME:PORT. slot_decide 계약과 같다
+#   --name-prefix      (필수) 컨테이너 이름 접두사. 실제 이름은 <접두사>-<슬롯 이름>
 #   --container-port    (필수) 컨테이너 안 앱 포트. 슬롯 포트를 127.0.0.1 에서 여기로 publish 한다
 #   --health-path       (필수) 슬롯 헬스 경로 (예: /actuator/health)
 #   --health-interval   (필수) 슬롯 헬스 폴링 간격(초)
@@ -56,12 +57,14 @@ VERIFY_CMD=""
 LOG_DIR=""
 BLOCKS_DIR="$SCRIPT_DIR"
 RUN_ARGS=()
+LEGACY_ARGS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --state-file)         STATE_FILE="${2:-}"; shift 2;;
     --slot-a)             SLOT_A="${2:-}"; shift 2;;
     --slot-b)             SLOT_B="${2:-}"; shift 2;;
+    --legacy-slot)        LEGACY_ARGS+=(--legacy-slot "${2:-}"); shift 2;;
     --name-prefix)        NAME_PREFIX="${2:-}"; shift 2;;
     --container-port)     CONTAINER_PORT="${2:-}"; shift 2;;
     --health-path)        HEALTH_PATH="${2:-}"; shift 2;;
@@ -104,7 +107,8 @@ remove_container() {
 }
 
 # 1. 슬롯 결정. 할당 후 eval 2단계는 slot_decide 헤더가 정한 소비 계약.
-DECIDED=$(bash "$BLOCKS_DIR/slot_decide.sh" --state-file "$STATE_FILE" --slot-a "$SLOT_A" --slot-b "$SLOT_B") \
+DECIDED=$(bash "$BLOCKS_DIR/slot_decide.sh" --state-file "$STATE_FILE" --slot-a "$SLOT_A" --slot-b "$SLOT_B" \
+    "${LEGACY_ARGS[@]+"${LEGACY_ARGS[@]}"}") \
   || { echo "slot_decide failed" >&2; exit 1; }
 eval "$DECIDED"
 NEW="$NAME_PREFIX-$INACTIVE"
