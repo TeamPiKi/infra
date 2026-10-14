@@ -119,6 +119,20 @@ FAIL_slot_switch=1 run_block -- --image img:1 >/dev/null 2>&1
 check "전환 실패 -> exit 1" 1 "$?"
 check "전환 실패: 새 슬롯 정리, 구 슬롯 무접촉" "2 0" "$(grep -c 'rm -f piki-x-blue' "$CALLS") $(grep -c 'piki-x-green' "$CALLS")"
 
+# 5. 옛 슬롯: 옛 blue(8090)가 서빙 중이면 green 새 포트로 배포하고 옛 blue 를 내린다
+echo "server 127.0.0.1:8090;" > "$STATE"
+OUT=$(run_block --legacy-slot blue:8090 --legacy-slot green:8091 -- --image img:1)
+check "옛 슬롯 -> exit 0" 0 "$?"
+check "옛 슬롯 결과 줄" "DEPLOYED slot=green port=18091 previous=blue" "$(printf '%s\n' "$OUT" | tail -1)"
+check "옛 슬롯: 서빙 중인 blue 는 전환 뒤에만 내림" \
+  "docker stop -t 30 piki-x-green|docker rm -f piki-x-green|docker stop -t 30 piki-x-blue|docker rm -f piki-x-blue" \
+  "$(grep '^docker' "$CALLS" | tr '\n' '|' | sed 's/|$//')"
+
+# 6. 옛 슬롯 인자 없이 같은 상태면 부트스트랩이라 서빙 중인 blue 를 기동 전에 지운다 (이 인자가 막는 사고)
+echo "server 127.0.0.1:8090;" > "$STATE"
+OUT=$(run_block -- --image img:1)
+check "옛 슬롯 인자 없음: 서빙 중인 blue 를 기동 전에 정리" "docker stop -t 30 piki-x-blue" "$(line_of docker)"
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "ALL PASS"

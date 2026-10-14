@@ -13,6 +13,10 @@
 # 상태 파일이 없거나 포트가 두 슬롯 어느 쪽도 아니면 부트스트랩으로 본다:
 # ACTIVE 는 빈 값, INACTIVE 는 --slot-a (첫 배포는 a 슬롯으로 간다).
 #
+# 슬롯 포트를 바꾸는 배포는 --legacy-slot 으로 옛 NAME:PORT 를 준다. 상태 파일이 옛 포트를 가리키면
+# 그 이름을 ACTIVE 로 판정한다. 부트스트랩으로 보면 서빙 중인 컨테이너가 a 슬롯 이름일 때
+# 잔재 정리가 그것을 지워 전환 전에 끊긴다. ACTIVE_PORT 는 옛 포트, INACTIVE_PORT 는 새 포트다.
+#
 # 출력: eval 가능한 한 줄 (stdout)
 #   ACTIVE=blue ACTIVE_PORT=18090 INACTIVE=green INACTIVE_PORT=18091
 # 호출자는 2단계로 소비한다 - eval "$(...)" 직결은 치환 실패가 빈 문자열 eval(성공)로
@@ -24,6 +28,7 @@
 #   --state-file  (필수) upstream 상태 파일 경로
 #   --slot-a      (필수) 첫 슬롯 NAME:PORT (예: blue:18090). 부트스트랩의 배포 대상
 #   --slot-b      (필수) 둘째 슬롯 NAME:PORT (예: green:18091)
+#   --legacy-slot (선택, 반복) 옛 슬롯 NAME:PORT (예: blue:8080). NAME 은 --slot-a/--slot-b 이름 중 하나
 #
 # 종료 코드: 성공 0, 인자 오류 2 (판정 자체는 실패하지 않는다 - 모르는 상태는 부트스트랩)
 
@@ -32,12 +37,14 @@ set -euo pipefail
 STATE_FILE=""
 SLOT_A=""
 SLOT_B=""
+LEGACY_SLOTS=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --state-file) STATE_FILE="${2:-}"; shift 2;;
-    --slot-a)     SLOT_A="${2:-}"; shift 2;;
-    --slot-b)     SLOT_B="${2:-}"; shift 2;;
+    --state-file)  STATE_FILE="${2:-}"; shift 2;;
+    --slot-a)      SLOT_A="${2:-}"; shift 2;;
+    --slot-b)      SLOT_B="${2:-}"; shift 2;;
+    --legacy-slot) LEGACY_SLOTS+=("${2:-}"); shift 2;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
@@ -71,6 +78,16 @@ NAME_A="$PARSED_NAME" PORT_A="$PARSED_PORT"
 parse_slot "--slot-b" "$SLOT_B"
 NAME_B="$PARSED_NAME" PORT_B="$PARSED_PORT"
 
+LEGACY_NAMES=() LEGACY_PORTS=()
+for legacy in "${LEGACY_SLOTS[@]+"${LEGACY_SLOTS[@]}"}"; do
+  parse_slot "--legacy-slot" "$legacy"
+  if [ "$PARSED_NAME" != "$NAME_A" ] && [ "$PARSED_NAME" != "$NAME_B" ]; then
+    echo "--legacy-slot name must be $NAME_A or $NAME_B (got: $legacy)" >&2
+    exit 2
+  fi
+  LEGACY_NAMES+=("$PARSED_NAME") LEGACY_PORTS+=("$PARSED_PORT")
+done
+
 CURRENT_PORT=""
 if [ -f "$STATE_FILE" ]; then
   CURRENT_PORT=$(grep -oE ':[0-9]+' "$STATE_FILE" | head -1 | tr -d ':' || true)
@@ -81,5 +98,16 @@ if [ "$CURRENT_PORT" = "$PORT_A" ]; then
 elif [ "$CURRENT_PORT" = "$PORT_B" ]; then
   echo "ACTIVE=$NAME_B ACTIVE_PORT=$PORT_B INACTIVE=$NAME_A INACTIVE_PORT=$PORT_A"
 else
+  for i in "${!LEGACY_PORTS[@]}"; do
+    if [ -z "$CURRENT_PORT" ] || [ "$CURRENT_PORT" != "${LEGACY_PORTS[$i]}" ]; then
+      continue
+    fi
+    if [ "${LEGACY_NAMES[$i]}" = "$NAME_A" ]; then
+      echo "ACTIVE=$NAME_A ACTIVE_PORT=$CURRENT_PORT INACTIVE=$NAME_B INACTIVE_PORT=$PORT_B"
+    else
+      echo "ACTIVE=$NAME_B ACTIVE_PORT=$CURRENT_PORT INACTIVE=$NAME_A INACTIVE_PORT=$PORT_A"
+    fi
+    exit 0
+  done
   echo "ACTIVE= ACTIVE_PORT= INACTIVE=$NAME_A INACTIVE_PORT=$PORT_A"
 fi
