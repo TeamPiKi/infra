@@ -88,7 +88,9 @@
 - **노트북 SSH 는 접속마다 공개키를 60초만 등록한다**(EC2 Instance Connect). 박스 `authorized_keys` 에 사람
   키를 두지 않는다.
 - **배포 작업은 GitHub OIDC 역할과 배포 키로 접속한다**(`.github/actions/ssm-ssh`). 이 역할은 셸 세션을 열 수 없다.
-- core 앱 박스는 아직 SSM 에 등록되지 않았다(전환 전).
+- **사람 권한은 평소 권한과 관리자 역할로 나뉜다.** 평소에는 조회·서버 접속·시크릿 읽기만 한다. 관리자
+  작업(terraform 등)은 Touch ID 로 로그인한 뒤 20분 안에만 관리자 역할로 바꿀 수 있고, 바꾼 세션은 1시간
+  간다. 그룹·역할 정의는 core `terraform/iam_people.tf`.
 
 ### 노트북 준비 (한 번)
 
@@ -100,10 +102,16 @@ AWS CLI 2.32.0 이상과 Session Manager 플러그인(`brew install --cask sessi
 [profile piki]
 region = ap-northeast-2
 
-# aws login 자격을 직접 못 읽는 도구(terraform 등)용
+# 관리자 역할. <ACCOUNT_ID> 는 aws sts get-caller-identity --profile piki 로 확인
+[profile piki-admin]
+region = ap-northeast-2
+role_arn = arn:aws:iam::<ACCOUNT_ID>:role/piki-admin
+source_profile = piki
+
+# aws login 자격을 직접 못 읽는 도구(terraform 등)용. 관리자 역할로 돈다
 [profile piki-tf]
 region = ap-northeast-2
-credential_process = aws configure export-credentials --profile piki --format process
+credential_process = aws configure export-credentials --profile piki-admin --format process
 ```
 
 `~/.ssh/config` (키가 없으면 `ssh-keygen -t ed25519 -f ~/.ssh/piki-ec2-connect`):
@@ -122,9 +130,9 @@ Host piki-*
 ```sh
 aws login --profile piki             # 브라우저에서 비밀번호 + Touch ID
 ssh piki-extractor                   # 호스트 이름 = 인스턴스 Name 태그
-AWS_PROFILE=piki-tf terraform plan
+AWS_PROFILE=piki-tf terraform plan   # Touch ID 로그인 뒤 20분 안에 시작
 ```
 
-- 호스트 이름은 Name 태그다: `piki-extractor`·`piki-headless-browser`(renderer)·`piki-prod-db`.
+- 호스트 이름은 Name 태그다: `piki-prod-app`·`piki-dev-app`(core)·`piki-extractor`·`piki-headless-browser`(renderer)·`piki-prod-db`.
 - `aws login` 화면에서 이미 열린 콘솔 세션을 고르면 그 세션의 인증을 물려받는다. Touch ID 를 거치지 않은
-  세션이면 MFA 를 요구하는 권한이 거부되니 새로 로그인한다.
+  세션이면 관리자 역할 전환이 거부되니 새로 로그인한다.
