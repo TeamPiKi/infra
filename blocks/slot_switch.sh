@@ -13,7 +13,7 @@
 #
 # 사용 예:
 #   slot_switch.sh --state-file /etc/nginx/piki-extractor-upstream.conf --server 127.0.0.1:18091 \
-#     --verify-cmd "bash /tmp/piki-blocks/healthcheck.sh --url http://localhost:8090/actuator/health --interval 2 --attempts 10"
+#     --verify-cmd "bash /tmp/piki-blocks/healthcheck.sh --url http://localhost:$SERVICE_PORT/actuator/health --interval 2 --attempts 10"
 #
 # 인자:
 #   --state-file  (필수) upstream 상태 파일 경로. "server <값>;" 한 줄로 덮어쓴다

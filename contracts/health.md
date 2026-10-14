@@ -45,17 +45,17 @@ SSOT 는 호출부 한 곳이다 (일반 규칙은 `conventions/blocks.md` 2번 
 ## 호출 예시 (서비스별)
 
 아래 값은 사용법을 보이기 위한 예시일 뿐 authoritative 하지 않다. 실제 배선은 위 원칙대로
-서비스별 배포 설정에서 값을 주입한다.
+서비스별 배포 설정에서 값을 주입한다. 포트는 contracts/ports.json 이 정본이다.
 
 ```bash
 # server (blue-green inactive 슬롯)
 healthcheck.sh --url "http://localhost:${INACTIVE_PORT}/health" --interval 5 --attempts 60
 
 # extractor
-healthcheck.sh --url "http://localhost:8090/actuator/health" --interval 5 --attempts 24 \
+healthcheck.sh --url "http://localhost:${SERVICE_PORT}/actuator/health" --interval 5 --attempts 24 \
                --expect-body '"status":"UP"'
 
 # headless
-healthcheck.sh --url "http://localhost:8000/health" --interval 3 --attempts 20 \
+healthcheck.sh --url "http://localhost:${SERVICE_PORT}/health" --interval 3 --attempts 20 \
                --expect-body '"ok":true'
 ```

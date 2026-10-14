@@ -56,6 +56,12 @@ jobs:
       - name: Run deploy_slot.sh self-test
         run: ./blocks/deploy_slot.test.sh
 
+      - name: Run service_url.sh self-test
+        run: ./blocks/service_url.test.sh
+
+      - name: Check contracts/ports.json
+        run: ./contracts/ports.test.sh
+
       - name: Run provision-alloy-ssm.sh self-test
         run: ./blocks/alloy/provision-alloy-ssm.test.sh
 

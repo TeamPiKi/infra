@@ -10,9 +10,9 @@
 #       200 이면 통과, 그 외(4xx/5xx/연결 실패)는 아직 준비 안 됨 -> 재시도.
 #
 # 사용 예:
-#   healthcheck.sh --url http://localhost:8081/health --interval 5 --attempts 60
-#   healthcheck.sh --url http://localhost:8000/health --interval 3 --attempts 20 --expect-body '"ok":true'
-#   healthcheck.sh --url http://localhost:8090/actuator/health --interval 5 --attempts 24 --expect-body '"status":"UP"'
+#   healthcheck.sh --url "http://localhost:$INACTIVE_PORT/health" --interval 5 --attempts 60
+#   healthcheck.sh --url "http://localhost:$SERVICE_PORT/health" --interval 3 --attempts 20 --expect-body '"ok":true'
+#   healthcheck.sh --url "http://localhost:$SERVICE_PORT/actuator/health" --interval 5 --attempts 24 --expect-body '"status":"UP"'
 #
 # 인자:
 #   --url          (필수) 헬스 엔드포인트 전체 URL

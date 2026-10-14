@@ -11,23 +11,27 @@
 #   6. 구 슬롯 종료
 # 3·4·5 어디서 실패해도 새 슬롯 컨테이너를 정리하고 exit 1 이다. 그때까지 트래픽은 구 슬롯이 서빙한다.
 #
-# 값(슬롯 이름·포트·헬스 경로·간격·횟수·검증 명령)은 전부 호출자가 준다 (conventions/blocks.md 2번).
-# 블록이 슬롯 값으로 채우는 run_container 인자는 셋뿐이다: --name, --publish, piki.metrics.port 라벨.
+# 값(서비스 포트·헬스 경로·간격·횟수·검증 명령)은 전부 호출자가 준다 (conventions/blocks.md 2번).
+# 서비스 포트는 호출자가 contracts/ports.json 에서 읽어 넘긴다. 슬롯 포트 규칙(앞에 1·2)은 이 블록만 안다.
+# 블록이 채우는 run_container 인자: --name, --publish, piki.metrics.port 라벨, --env PORT(서비스 포트).
 # 나머지 run_container 인자는 `--` 뒤에 그대로 넘긴다.
 #
 # 사용 예:
 #   deploy_slot.sh --state-file /etc/nginx/piki-extractor-upstream.conf \
-#     --slot-a blue:18090 --slot-b green:18091 --name-prefix piki-extractor --container-port 8090 \
+#     --service-port "$SERVICE_PORT" --name-prefix piki-extractor \
 #     --health-path /actuator/health --health-interval 5 --health-attempts 36 --health-expect-body '"status":"UP"' \
-#     --verify-cmd "bash /tmp/piki-blocks/healthcheck.sh --url http://localhost:8090/actuator/health --interval 2 --attempts 10" \
+#     --verify-cmd "bash /tmp/piki-blocks/healthcheck.sh --url http://localhost:$SERVICE_PORT/actuator/health --interval 2 --attempts 10" \
 #     -- --image "$IMAGE" --restart unless-stopped --env-file "$ENV_FILE" --pull --memory 640m
 #
 # 인자:
 #   --state-file        (필수) upstream 상태 파일 경로
-#   --slot-a / --slot-b (필수) NAME:PORT 둘. slot_decide 계약과 같다
+#   --service-port      서비스 포트(네 자리). 슬롯은 blue=1<포트>·green=2<포트>, 컨테이너 안 앱도 이 포트로
+#                       뜨도록 env PORT 로 넘긴다
+#   --slot-a / --slot-b / --container-port
+#                       --service-port 이전의 옛 인자. 셋을 함께 주면 위 계산 대신 이 값을 쓴다.
+#                       core·extractor·renderer 배포가 --service-port 로 옮기면 삭제
 #   --legacy-slot       (선택, 반복) 슬롯 포트를 바꾸는 배포의 옛 NAME:PORT. slot_decide 계약과 같다
 #   --name-prefix      (필수) 컨테이너 이름 접두사. 실제 이름은 <접두사>-<슬롯 이름>
-#   --container-port    (필수) 컨테이너 안 앱 포트. 슬롯 포트를 127.0.0.1 에서 여기로 publish 한다
 #   --health-path       (필수) 슬롯 헬스 경로 (예: /actuator/health)
 #   --health-interval   (필수) 슬롯 헬스 폴링 간격(초)
 #   --health-attempts   (필수) 슬롯 헬스 최대 시도
@@ -45,6 +49,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 STATE_FILE=""
+SERVICE_PORT=""
 SLOT_A=""
 SLOT_B=""
 NAME_PREFIX=""
@@ -62,6 +67,7 @@ LEGACY_ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --state-file)         STATE_FILE="${2:-}"; shift 2;;
+    --service-port)       SERVICE_PORT="${2:-}"; shift 2;;
     --slot-a)             SLOT_A="${2:-}"; shift 2;;
     --slot-b)             SLOT_B="${2:-}"; shift 2;;
     --legacy-slot)        LEGACY_ARGS+=(--legacy-slot "${2:-}"); shift 2;;
@@ -79,9 +85,26 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-for pair in "STATE_FILE:--state-file" "SLOT_A:--slot-a" "SLOT_B:--slot-b" "NAME_PREFIX:--name-prefix" \
-            "CONTAINER_PORT:--container-port" "HEALTH_PATH:--health-path" "HEALTH_INTERVAL:--health-interval" \
-            "HEALTH_ATTEMPTS:--health-attempts" "VERIFY_CMD:--verify-cmd"; do
+ENV_ARGS=()
+if [ -n "$SERVICE_PORT" ]; then
+  if [ -n "$SLOT_A$SLOT_B$CONTAINER_PORT" ]; then
+    echo "--service-port cannot be combined with --slot-a/--slot-b/--container-port" >&2
+    exit 2
+  fi
+  case "$SERVICE_PORT" in
+    [1-9][0-9][0-9][0-9]) ;;
+    *) echo "--service-port must be four digits (got: $SERVICE_PORT)" >&2; exit 2;;
+  esac
+  SLOT_A="blue:1$SERVICE_PORT"
+  SLOT_B="green:2$SERVICE_PORT"
+  CONTAINER_PORT="$SERVICE_PORT"
+  export PORT="$SERVICE_PORT"
+  ENV_ARGS=(--env PORT)
+fi
+
+for pair in "STATE_FILE:--state-file" "SLOT_A:--slot-a or --service-port" "SLOT_B:--slot-b or --service-port" \
+            "NAME_PREFIX:--name-prefix" "CONTAINER_PORT:--container-port or --service-port" "HEALTH_PATH:--health-path" \
+            "HEALTH_INTERVAL:--health-interval" "HEALTH_ATTEMPTS:--health-attempts" "VERIFY_CMD:--verify-cmd"; do
   var="${pair%%:*}"; flag="${pair#*:}"
   [ -n "${!var}" ] || { echo "$flag is required" >&2; exit 2; }
 done
@@ -127,6 +150,7 @@ phase "run $NEW"
 if ! bash "$BLOCKS_DIR/run_container.sh" \
     --name "$NEW" --publish "127.0.0.1:$INACTIVE_PORT:$CONTAINER_PORT" \
     --label "piki.metrics.port=$INACTIVE_PORT" \
+    "${ENV_ARGS[@]+"${ENV_ARGS[@]}"}" \
     "${RUN_ARGS[@]+"${RUN_ARGS[@]}"}"; then
   echo "run_container failed - cleaning up $NEW" >&2
   remove_container "$NEW" 40

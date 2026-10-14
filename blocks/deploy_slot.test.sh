@@ -133,6 +133,41 @@ echo "server 127.0.0.1:8090;" > "$STATE"
 OUT=$(run_block -- --image img:1)
 check "옛 슬롯 인자 없음: 서빙 중인 blue 를 기동 전에 정리" "docker stop -t 30 piki-x-blue" "$(line_of docker)"
 
+# 7. --service-port: 슬롯·컨테이너 포트·PORT env 를 블록이 계산
+run_service_port() {
+  : > "$CALLS"
+  "$BLOCK" --state-file "$STATE" --name-prefix piki-x \
+    --health-path /health --health-interval 5 --health-attempts 3 \
+    --verify-cmd "verify-front" --blocks-dir "$FAKES" "$@"
+}
+echo "server 127.0.0.1:28082;" > "$STATE"
+OUT=$(run_service_port --service-port 8082 -- --image img:1)
+check "서비스 포트 -> exit 0" 0 "$?"
+check "서비스 포트 결과 줄 (green 서빙 중이라 blue)" "DEPLOYED slot=blue port=18082 previous=green" "$(printf '%s\n' "$OUT" | tail -1)"
+check "서비스 포트: publish·라벨·PORT env 를 블록이 채움" \
+  "run_container --name piki-x-blue --publish 127.0.0.1:18082:8082 --label piki.metrics.port=18082 --env PORT --image img:1" \
+  "$(line_of run_container)"
+
+# 기록용 가짜는 인자만 남기므로, 블록이 export 한 PORT 값은 env 를 찍는 가짜로 따로 본다
+cat > "$WORKDIR/env_probe.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "PORT=${PORT:-}" >> "$CALLS"
+EOF
+cp "$FAKES/run_container.sh" "$WORKDIR/run_container.orig"
+cp "$WORKDIR/env_probe.sh" "$FAKES/run_container.sh"
+run_service_port --service-port 8082 -- --image img:1 >/dev/null 2>&1
+check "서비스 포트: run_container 가 PORT 값을 받음" "PORT=8082" "$(line_of PORT=)"
+cp "$WORKDIR/run_container.orig" "$FAKES/run_container.sh"
+
+run_service_port --service-port 8082 --slot-a blue:18082 -- --image img:1 >/dev/null 2>&1
+check "서비스 포트와 옛 슬롯 인자 동시 사용 -> exit 2" 2 "$?"
+run_service_port --service-port 80820 -- --image img:1 >/dev/null 2>&1
+check "다섯 자리 서비스 포트 -> exit 2" 2 "$?"
+
+echo "server 127.0.0.1:18090;" > "$STATE"
+OUT=$(run_service_port --service-port 8081 --legacy-slot blue:18090 --legacy-slot green:18091 -- --image img:1)
+check "서비스 포트 + 옛 슬롯 -> 옛 blue 서빙 중이면 새 green" "DEPLOYED slot=green port=28081 previous=blue" "$(printf '%s\n' "$OUT" | tail -1)"
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "ALL PASS"
