@@ -99,7 +99,9 @@ elif [ "$CURRENT_PORT" = "$PORT_B" ]; then
   echo "ACTIVE=$NAME_B ACTIVE_PORT=$PORT_B INACTIVE=$NAME_A INACTIVE_PORT=$PORT_A"
 else
   for i in "${!LEGACY_PORTS[@]}"; do
-    [ -n "$CURRENT_PORT" ] && [ "$CURRENT_PORT" = "${LEGACY_PORTS[$i]}" ] || continue
+    if [ -z "$CURRENT_PORT" ] || [ "$CURRENT_PORT" != "${LEGACY_PORTS[$i]}" ]; then
+      continue
+    fi
     if [ "${LEGACY_NAMES[$i]}" = "$NAME_A" ]; then
       echo "ACTIVE=$NAME_A ACTIVE_PORT=$CURRENT_PORT INACTIVE=$NAME_B INACTIVE_PORT=$PORT_B"
     else
