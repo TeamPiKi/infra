@@ -1,0 +1,5 @@
+{
+  "core": { "port": 8080 },
+  "extractor": { "port": 8081, "box": "piki-extractor" },
+  "renderer": { "port": 8082, "box": "piki-headless-browser" }
+}
