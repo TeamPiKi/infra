@@ -65,3 +65,53 @@
 - **서비스 세그먼트는 repo 이름과 일치시킨다.** 새 서비스·새 시크릿은 시작부터 따른다.
   예외는 renderer 의 `/piki-headless-browser/` 하나다(1번 항목의 state key 와 같은 이유로 이미
   생성된 경로의 옛 이름 유지).
+
+## 5. 서버 접속
+
+사람·배포 작업 모두 SSM Session Manager 를 거쳐 박스에 들어간다. 어느 SG 에도 22 번 인바운드를 두지 않는다.
+
+- **사람은 액세스 키를 만들지 않는다.** 콘솔 로그인에 패스키(Touch ID)를 등록하고, CLI 는 `aws login` 이
+  주는 임시 자격만 쓴다(15분마다 자동 갱신, 최대 12시간).
+- **노트북 SSH 는 접속마다 공개키를 60초만 등록한다**(EC2 Instance Connect). 박스 `authorized_keys` 에 사람
+  키를 두지 않는다.
+- **배포 작업은 GitHub OIDC 역할과 배포 키로 접속한다**(`.github/actions/ssm-ssh`). 이 역할은 셸 세션을 열 수 없다.
+- core 앱 박스는 아직 SSM 에 등록되지 않았다(전환 전).
+
+### 노트북 준비 (한 번)
+
+AWS CLI 2.32.0 이상과 Session Manager 플러그인(`brew install --cask session-manager-plugin`)이 필요하다.
+
+`~/.aws/config`:
+
+```ini
+[profile piki]
+region = ap-northeast-2
+
+# aws login 자격을 직접 못 읽는 도구(terraform 등)용
+[profile piki-tf]
+region = ap-northeast-2
+credential_process = aws configure export-credentials --profile piki --format process
+```
+
+`~/.ssh/config` (키가 없으면 `ssh-keygen -t ed25519 -f ~/.ssh/piki-ec2-connect`):
+
+```text
+Host piki-*
+  User ubuntu
+  IdentityFile ~/.ssh/piki-ec2-connect
+  IdentitiesOnly yes
+  ServerAliveInterval 30
+  ProxyCommand sh -c 'export AWS_PROFILE=piki; id=$(aws ec2 describe-instances --filters Name=tag:Name,Values=%n Name=instance-state-name,Values=running --query "Reservations[].Instances[].InstanceId" --output text) && aws ec2-instance-connect send-ssh-public-key --instance-id "$id" --instance-os-user %r --ssh-public-key file://$HOME/.ssh/piki-ec2-connect.pub >/dev/null && exec aws ssm start-session --target "$id" --document-name AWS-StartSSHSession --parameters portNumber=%p'
+```
+
+### 사용
+
+```sh
+aws login --profile piki             # 브라우저에서 비밀번호 + Touch ID
+ssh piki-extractor                   # 호스트 이름 = 인스턴스 Name 태그
+AWS_PROFILE=piki-tf terraform plan
+```
+
+- 호스트 이름은 Name 태그다: `piki-extractor`·`piki-headless-browser`(renderer)·`piki-prod-db`.
+- `aws login` 화면에서 이미 열린 콘솔 세션을 고르면 그 세션의 인증을 물려받는다. Touch ID 를 거치지 않은
+  세션이면 MFA 를 요구하는 권한이 거부되니 새로 로그인한다.
