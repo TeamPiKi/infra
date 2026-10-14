@@ -48,12 +48,26 @@
   접근하기 때문이다.
 - **내부 서비스(extractor·renderer·DB)의 서비스 포트 인바운드는 IP 가 아니라 SG-id 참조로 격리**한다
   ("우리 서버만" 도달).
-  - extractor ingress = [app SG] on 8090
-  - renderer ingress = [app SG, extractor SG] on 8000
+  - extractor ingress = [app SG] on 8081
+  - renderer ingress = [app SG, extractor SG] on 8082
   - DB ingress = [app SG] on 3306
 - **서비스 포트를 공개하는 것은 core 뿐**이다. 0.0.0.0/0 인바운드(80·443) + nginx TLS 를 연다.
   앱 포트(blue·green 슬롯)는 외부에 노출하지 않고 nginx 가 localhost 로 forward 한다. core SG 의
   ingress 규칙은 콘솔/CLI 가 권위를 가지며 terraform 은 `ignore_changes = [ingress]` 로 덮어쓰지 않는다.
+- **포트 체계.** 서비스마다 번호 하나를 두고, 입구·슬롯·컨테이너 포트를 그 번호에서 정한다.
+
+  | 서비스 | 서비스 번호 | 입구 (nginx) | blue 슬롯 | green 슬롯 |
+  |---|---|---|---|---|
+  | core | 8080 | 443 | 18080 | 28080 |
+  | extractor | 8081 | 8081 | 18081 | 28081 |
+  | renderer | 8082 | 8082 | 18082 | 28082 |
+
+  - 슬롯은 `127.0.0.1` 에만 바인딩하고, 컨테이너 안에서 앱은 서비스 번호로 듣는다.
+  - 다음 서비스는 8083 을 받는다. 박스가 이미 쓰는 22·53·4317·4318(Alloy OTLP)·12345(Alloy UI)와
+    32768 이상(임시 포트 대역)은 피한다.
+  - 슬롯 앞자리 1·2 는 옛 번호와 겹치지 않아, 전환 중 옛 포트와 새 포트를 함께 열 수 있다.
+  - 호출자를 옮길 때까지 extractor 는 옛 입구 8090, renderer 는 옛 포트 8000 을 함께 둔다.
+  - renderer 는 nginx·슬롯을 두기 전까지 컨테이너가 서비스 번호를 직접 연다(렌더 중 메모리 측정 뒤 결정).
 - **egress 는 모든 박스가 전체 개방**(0.0.0.0/0). 외부 몰 fetch·LLM·렌더 호출과 SSM·S3·이미지
   pull 에 필요하다.
 
