@@ -179,7 +179,7 @@ enum ExtractionErrorCode {
     (disposition) = PERMANENT,
     (bucket) = EXTRACT_QUALITY
   ];
-  // 사설·메타데이터·loopback 으로 resolve 되는 host 차단(SSRF). 헤드리스 승격 절대 금지.
+  // 내부 대역(internal-ranges.txt)으로 resolve 되는 host, 또는 렌더가 그 대역 주소에서 응답을 받음(SSRF). 헤드리스 승격 절대 금지.
   BLOCKED_HOST = 10 [
     (disposition) = PERMANENT,
     (bucket) = INTERNAL_ERROR
@@ -189,7 +189,7 @@ enum ExtractionErrorCode {
     (disposition) = PERMANENT,
     (bucket) = INTERNAL_ERROR
   ];
-  // 3xx 응답에 Location 부재·손상.
+  // 3xx 응답에 Location 부재·손상, 또는 https 가 아닌 위치. 헤드리스 승격 대상.
   MALFORMED_REDIRECT = 12 [
     (disposition) = PERMANENT,
     (bucket) = INTERNAL_ERROR
