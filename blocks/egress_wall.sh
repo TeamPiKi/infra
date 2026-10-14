@@ -13,16 +13,18 @@
 #   - 인스턴스 메타데이터 169.254.169.254:80: 앱의 AWS 자격. IMDSv2 필수라 브라우저는 토큰을 못 얻는다
 #   - 서버 Alloy OTLP 4318: contracts/observability.md
 #
-# 규칙은 /etc 에 남아 systemd 가 부팅 때 Docker 보다 먼저 다시 건다. 적용 뒤 실행 중인 컨테이너의 네트워크에서
-# 예외 목적지와 차단 목적지를 찔러 거절 횟수로 확인하고, 어긋나면 벽을 걷고 exit 1 (서비스는 벽 없이 계속 돈다).
+# 규칙은 /etc 에 남아 systemd 가 부팅 때 Docker 보다 먼저 다시 건다. 적용 뒤 bridge 에 잠깐 붙인 시험용 netns 에서
+# 예외 목적지와 차단 목적지를 찔러 그 출발 주소의 거절 횟수로 확인하고, 어긋나면 벽을 걷고 exit 1 (서비스는 계속 돈다).
 #
 # 실행: root. 사용 예:
 #   bash egress_wall.sh --ranges-file shared-infra/contracts/internal-ranges.txt
 #   bash egress_wall.sh --ranges-file shared-infra/contracts/internal-ranges.txt --allow-tcp 10.0.1.230:8082
+#   bash egress_wall.sh --remove        # 벽과 부팅 재적용 단위를 걷는다
 #
 # 인자:
 #   --ranges-file (필수) 내부 대역 정본
 #   --allow-tcp   (선택, 반복) 이 서비스만 쓰는 내부 목적지 IPv4:PORT
+#   --remove      (단독) 벽을 걷고 끝낸다
 #
 # 종료 코드: 성공 0, 적용·검증 실패 1, 인자 오류 2
 
@@ -37,21 +39,50 @@ METADATA_IP=169.254.169.254
 OTLP_PORT=4318
 # docker0 은 기본 bridge, br-+ 는 사용자 정의 bridge. 어느 쪽에 붙은 컨테이너든 같은 벽을 지난다.
 BRIDGES=(docker0 br-+)
+PROBE_NS=piki-wall-probe
+PROBE_LINK=pwprobe0
 IPV4='([0-9]{1,3}\.){3}[0-9]{1,3}'
 
 require_value() {
   [ "$2" -ge 2 ] || { echo "missing value for $1" >&2; exit 2; }
 }
 
+remove_wall() {
+  iptables -F DOCKER-USER 2>/dev/null || true
+  for bridge in "${BRIDGES[@]}"; do
+    while iptables -D INPUT -i "$bridge" -j PIKI-WALL-HOST 2>/dev/null; do :; done
+  done
+  for chain in PIKI-WALL-OUT PIKI-WALL-HOST PIKI-WALL-DENY; do
+    iptables -F "$chain" 2>/dev/null || true
+    iptables -X "$chain" 2>/dev/null || true
+  done
+  if [ -d /run/systemd/system ]; then
+    systemctl disable "$UNIT_NAME" >/dev/null 2>&1 || true
+  fi
+  rm -f "$RULES_FILE" "$APPLY_BIN" "$UNIT_FILE"
+}
+
 RANGES_FILE=""
 ALLOW_TCP=()
+REMOVE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --ranges-file) require_value "$1" "$#"; RANGES_FILE="$2"; shift 2;;
     --allow-tcp)   require_value "$1" "$#"; ALLOW_TCP+=("$2"); shift 2;;
+    --remove)      REMOVE=1; shift;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
 done
+
+if [ "$REMOVE" -eq 1 ]; then
+  if [ -n "$RANGES_FILE" ] || [ "${#ALLOW_TCP[@]}" -gt 0 ]; then
+    echo "--remove takes no other argument" >&2
+    exit 2
+  fi
+  remove_wall
+  echo "[wall] 벽을 걷었다"
+  exit 0
+fi
 
 [ -n "$RANGES_FILE" ] || { echo "--ranges-file is required" >&2; exit 2; }
 [ -f "$RANGES_FILE" ] || { echo "ranges file not found: $RANGES_FILE" >&2; exit 2; }
@@ -123,29 +154,33 @@ render_rules() {
   echo 'COMMIT'
 }
 
-remove_wall() {
-  iptables -F DOCKER-USER 2>/dev/null || true
-  for bridge in "${BRIDGES[@]}"; do
-    while iptables -D INPUT -i "$bridge" -j PIKI-WALL-HOST 2>/dev/null; do :; done
-  done
-  for chain in PIKI-WALL-OUT PIKI-WALL-HOST PIKI-WALL-DENY; do
-    iptables -F "$chain" 2>/dev/null || true
-    iptables -X "$chain" 2>/dev/null || true
-  done
-  if [ -d /run/systemd/system ]; then
-    systemctl disable "$UNIT_NAME" >/dev/null 2>&1 || true
+ip2int() {
+  local IFS=.
+  read -r a b c d <<<"$1"
+  echo $(((a << 24) | (b << 16) | (c << 8) | d))
+}
+
+int2ip() {
+  echo "$((($1 >> 24) & 255)).$((($1 >> 16) & 255)).$((($1 >> 8) & 255)).$(($1 & 255))"
+}
+
+probe_down() {
+  ip netns del "$PROBE_NS" 2>/dev/null || true
+  ip link del "$PROBE_LINK" 2>/dev/null || true
+  if [ -n "${PROBE_IP:-}" ]; then
+    iptables -D PIKI-WALL-DENY -s "$PROBE_IP/32" 2>/dev/null || true
   fi
-  rm -f "$RULES_FILE" "$APPLY_BIN" "$UNIT_FILE"
 }
 
 fail() {
   echo "[wall] $1 - 벽을 걷는다" >&2
+  probe_down
   remove_wall
   exit 1
 }
 
 STAGED=$(mktemp)
-trap 'rm -f "$STAGED"' EXIT
+trap 'rm -f "$STAGED"; probe_down' EXIT
 render_rules >"$STAGED"
 iptables-restore --test --noflush <"$STAGED" || { echo "[wall] iptables-restore 가 규칙을 거부했다" >&2; exit 1; }
 
@@ -185,44 +220,54 @@ fi
 
 [[ "$(iptables -S FORWARD)" == *"-j DOCKER-USER"* ]] || fail "FORWARD 가 DOCKER-USER 를 거치지 않는다"
 
-deny_count() {
-  iptables -nvxL PIKI-WALL-DENY | awk '$3 == "REJECT" {n += $1} END {print n + 0}'
+# 동작 확인은 운영 컨테이너가 아니라 docker0 에 잠깐 붙인 netns 에서 한다. 그 출발 주소만 세야 운영 트래픽이 벽에
+# 걸려도 판정이 흔들리지 않는다. Docker 는 bridge 대역 앞에서부터 주소를 나눠 주므로 끝쪽에서 빈 주소를 고른다.
+SUBNET=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
+GATEWAY=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+USED=$(docker network inspect bridge -f '{{range .Containers}}{{.IPv4Address}} {{end}}')
+PREFIX_LEN=${SUBNET#*/}
+LAST=$(($(ip2int "${SUBNET%/*}") + (1 << (32 - PREFIX_LEN)) - 2))
+PROBE_IP=""
+for offset in 0 1 2 3 4 5 6 7; do
+  candidate=$(int2ip $((LAST - offset)))
+  [[ " $USED " == *" $candidate/"* ]] || { PROBE_IP="$candidate"; break; }
+done
+[ -n "$PROBE_IP" ] || fail "시험용 주소를 고르지 못했다"
+
+ip netns add "$PROBE_NS" || fail "시험용 netns 를 만들지 못했다"
+ip link add "$PROBE_LINK" type veth peer name eth0 netns "$PROBE_NS" || fail "시험용 veth 를 만들지 못했다"
+ip link set "$PROBE_LINK" master docker0 up || fail "시험용 veth 를 docker0 에 붙이지 못했다"
+ip netns exec "$PROBE_NS" sh -c "ip addr add $PROBE_IP/$PREFIX_LEN dev eth0 && ip link set eth0 up && ip link set lo up && ip route add default via $GATEWAY" \
+  || fail "시험용 netns 주소를 잡지 못했다"
+iptables -I PIKI-WALL-DENY 1 -s "$PROBE_IP/32"
+
+probe_rejects() {
+  iptables -v -S PIKI-WALL-DENY | awk -v src="-s $PROBE_IP/32" 'index($0, src) && $0 !~ / -j / {print $(NF - 1)}'
 }
 
-# 컨테이너의 네트워크에서 연결을 시도한다. 성패가 아니라 벽의 거절 횟수로 판정하므로 목적지가 꺼져 있어도 된다.
+# 성패가 아니라 시험 주소의 거절 횟수로 판정하므로 목적지가 꺼져 있어도 된다.
 poke() {
-  local pid="$1" proto="$2" ip="$3" port="$4"
+  local proto="$1" ip="$2" port="$3"
   if [ "$proto" = udp ]; then
-    nsenter -t "$pid" -n timeout 2 bash -c "printf x >/dev/udp/$ip/$port" 2>/dev/null || true
+    ip netns exec "$PROBE_NS" timeout 2 bash -c "printf x >/dev/udp/$ip/$port" 2>/dev/null || true
   else
-    nsenter -t "$pid" -n timeout 2 bash -c "exec 3<>/dev/tcp/$ip/$port" 2>/dev/null || true
+    ip netns exec "$PROBE_NS" timeout 2 bash -c "exec 3<>/dev/tcp/$ip/$port" 2>/dev/null || true
   fi
 }
 
-PROBES=$(docker ps -q --filter network=bridge)
-PROBE="${PROBES%%$'\n'*}"
-if [ -z "$PROBE" ]; then
-  echo "[wall] bridge 에 실행 중인 컨테이너가 없어 동작 확인을 건너뛴다"
-else
-  PID=$(docker inspect -f '{{.State.Pid}}' "$PROBE")
-  GATEWAY=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+for ns in $DNS_SERVERS; do
+  poke udp "$ns" 53
+  poke tcp "$ns" 53
+done
+poke tcp "$METADATA_IP" 80
+poke tcp "$GATEWAY" "$OTLP_PORT"
+for target in "${ALLOW_TCP[@]+"${ALLOW_TCP[@]}"}"; do
+  poke tcp "${target%:*}" "${target##*:}"
+done
+[ "$(probe_rejects)" = 0 ] || fail "예외 목적지가 벽에 걸렸다"
 
-  before=$(deny_count)
-  for ns in $DNS_SERVERS; do
-    poke "$PID" udp "$ns" 53
-    poke "$PID" tcp "$ns" 53
-  done
-  poke "$PID" tcp "$METADATA_IP" 80
-  poke "$PID" tcp "$GATEWAY" "$OTLP_PORT"
-  for target in "${ALLOW_TCP[@]+"${ALLOW_TCP[@]}"}"; do
-    poke "$PID" tcp "${target%:*}" "${target##*:}"
-  done
-  [ "$(deny_count)" -eq "$before" ] || fail "예외 목적지가 벽에 걸렸다"
-
-  before=$(deny_count)
-  poke "$PID" tcp "$METADATA_IP" 1
-  poke "$PID" tcp "$GATEWAY" 1
-  [ "$(deny_count)" -ge $((before + 2)) ] || fail "내부 목적지가 벽에 걸리지 않았다"
-fi
+poke tcp "$METADATA_IP" 1
+poke tcp "$GATEWAY" 1
+[ "$(probe_rejects)" -ge 2 ] || fail "내부 목적지가 벽에 걸리지 않았다"
 
 echo "[wall] OK: 내부 대역 ${#RANGES[@]}개 차단, DNS $(echo "$DNS_SERVERS" | tr '\n' ' ')· 메타데이터 · OTLP $OTLP_PORT${ALLOW_TCP[*]:+ · ${ALLOW_TCP[*]}} 허용"

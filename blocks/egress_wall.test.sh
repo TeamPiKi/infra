@@ -59,6 +59,9 @@ printf '# only comments\n::1/128\n' >"$BAD_RANGES"
 "$BLOCK" --ranges-file "$BAD_RANGES" >/dev/null 2>&1
 check "IPv4 대역 0개 -> exit 2" 2 "$?"
 
+"$BLOCK" --remove --ranges-file "$RANGES" >/dev/null 2>&1
+check "--remove 에 다른 인자 -> exit 2" 2 "$?"
+
 # --- 실제 커널 ---
 
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
@@ -158,9 +161,13 @@ expect "벽 전: VPC 의 다른 서버 10.0.1.45:3306 에 닿음" 0 reach 10.0.1
 expect "벽 전: 서버 sshd 172.17.0.1:22 에 닿음" 0 reach "$GW" 22
 expect "벽 전: 옆 컨테이너에 닿음" 0 reach "$PEER_IP" 9000
 
-echo "--- 벽 적용"
+echo "--- 벽 적용 (운영 컨테이너가 벽에 계속 걸리는 중)"
+# 확인 판정이 시험 주소만 세는지 본다. 서버 전체 거절 수를 보면 이 소음 때문에 벽을 걷는다.
+docker exec -d probe timeout 20 sh -c 'while :; do nc -z -w 1 10.0.1.45 3306; done'
 apply; [ $? -eq 0 ] && pass "블록 exit 0 (동작 확인 포함)" || failed "블록 exit 0"
 [ -f /etc/piki/egress-wall.rules ] && [ -x /usr/local/sbin/piki-egress-wall ] && pass "규칙 파일·적용 스크립트 설치" || failed "규칙 파일·적용 스크립트 설치"
+! ip netns list | grep -q piki-wall-probe && ! ip link show pwprobe0 >/dev/null 2>&1 && [ -z "$(iptables -S PIKI-WALL-DENY | grep -- '-s ')" ] \
+  && pass "시험용 netns·카운터 규칙을 남기지 않음" || failed "시험용 netns·카운터 규칙을 남기지 않음"
 
 echo "--- 허용"
 expect "인터넷 203.0.113.10:443" 0 reach 203.0.113.10 443
@@ -231,7 +238,13 @@ docker network rm v6net >/dev/null
 echo "--- 실행 중인 컨테이너 없음"
 docker rm -f probe peer >/dev/null
 out=$(apply 2>&1); rc=$?
-[ "$rc" = 0 ] && [[ "$out" == *"건너뛴다"* ]] && pass "동작 확인을 건너뛰고 exit 0" || failed "동작 확인을 건너뛰고 exit 0 (rc=$rc)"
+[ "$rc" = 0 ] && [[ "$out" == *"OK:"* ]] && pass "컨테이너 없이도 동작 확인 후 exit 0" || failed "컨테이너 없이도 동작 확인 후 exit 0 (rc=$rc)"
+
+echo "--- 걷기"
+bash /infra/blocks/egress_wall.sh --remove >/dev/null 2>&1; rc=$?
+[ "$rc" = 0 ] && [ -z "$(iptables -S DOCKER-USER | grep -v '^-N')" ] && ! iptables -S PIKI-WALL-OUT >/dev/null 2>&1 \
+  && [ -z "$(iptables -S INPUT | grep PIKI-WALL)" ] && [ ! -f /etc/piki/egress-wall.rules ] && [ ! -f /usr/local/sbin/piki-egress-wall ] \
+  && pass "--remove 가 규칙·파일을 걷음" || failed "--remove 가 규칙·파일을 걷음 (rc=$rc)"
 
 exit "$FAILURES"
 SCENARIO
