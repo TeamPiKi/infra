@@ -49,7 +49,8 @@ message RenderResponse {
   repeated Hop hops = 3;
   // 브라우저가 내부 대역(contracts/internal-ranges.txt) 주소에서 응답을 받음. 참이면 hops 는 비고 error 가 채워짐.
   // 판정은 이름이 아니라 브라우저가 실제로 연결한 IP 로 함.
-  bool internal_address_hit = 4 [json_name = "internal_address_hit"];
+  // renderer 는 판정을 했으면 거짓도 늘 실어 보냄. 필드가 없으면 판정하지 않는 renderer 라 호출자는 홉을 쓰지 않음.
+  optional bool internal_address_hit = 4 [json_name = "internal_address_hit"];
 }
 
 // 브라우저가 거쳐 간 문서 하나.
