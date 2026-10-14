@@ -181,7 +181,12 @@ expect "링크 로컬의 다른 주소 169.254.169.253:53" 1 reach 169.254.169.2
 expect "메타데이터의 다른 포트 169.254.169.254:8082" 1 reach 169.254.169.254 8082
 expect "서버 sshd 172.17.0.1:22" 1 reach "$GW" 22
 expect "서버 sshd 를 서버 다른 주소로 192.0.2.1:22" 1 reach 192.0.2.1 22
-expect "옆 컨테이너" 1 reach "$PEER_IP" 9000
+# 같은 bridge 안의 연결은 br_netfilter 가 켜진 커널에서만 iptables 를 지난다. 두 운영 서버는 꺼져 있어 벽 밖이다.
+if [ "$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null)" = 1 ]; then
+  expect "옆 컨테이너 (br_netfilter 켜짐)" 1 reach "$PEER_IP" 9000
+else
+  expect "옆 컨테이너는 벽 밖 (br_netfilter 꺼짐, 운영 서버와 같음)" 0 reach "$PEER_IP" 9000
+fi
 # docker exec 지연이 섞이지 않게 컨테이너 안에서 잰다. 버리기(DROP)였다면 -w 3 을 다 기다린다.
 real=$(docker exec probe sh -c 'time nc -z -w 3 10.0.1.45 3306' 2>&1 | awk '/^real/ {print $2 $3}')
 [[ "$real" == 0m0.* ]] && pass "거절이 즉시 돌아옴 (${real})" || failed "거절이 즉시 돌아옴 (${real})"

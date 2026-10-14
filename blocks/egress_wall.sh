@@ -5,7 +5,8 @@
 # 컨테이너가 내부 대역(contracts/internal-ranges.txt)으로 여는 새 연결을 이 서버의 iptables 에서 거절한다.
 # 앱 검사가 못 보는 경로(브라우저 worker·WebRTC, 검사 뒤 이름 해석이 바뀐 요청)도 연결 단계에서 막힌다.
 # SG 는 허용 규칙만 있어 "내부만 막고 인터넷은 허용" 을 표현할 수 없어 서버에서 막는다.
-# 컨테이너 자기 loopback 은 서버 iptables 를 지나지 않아 막지 못한다 - 그건 앱 검사 몫이다.
+# 컨테이너 자기 loopback 은 서버 iptables 를 지나지 않아 막지 못한다 - 그건 앱 검사 몫이다. 같은 bridge 의 옆
+# 컨테이너(같은 서비스의 다른 슬롯)도 br_netfilter 가 없는 서버(두 운영 서버 실측)에서는 iptables 를 지나지 않아 같은 취급이다.
 #
 # 함대 공통 예외는 블록이 갖는다 (conventions/blocks.md 2번 원칙):
 #   - DNS: Docker 가 컨테이너 resolv.conf 를 만드는 원본의 nameserver
