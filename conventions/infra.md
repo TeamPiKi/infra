@@ -48,12 +48,25 @@
   접근하기 때문이다.
 - **내부 서비스(extractor·renderer·DB)의 서비스 포트 인바운드는 IP 가 아니라 SG-id 참조로 격리**한다
   ("우리 서버만" 도달).
-  - extractor ingress = [app SG] on 8090
-  - renderer ingress = [app SG, extractor SG] on 8000
+  - extractor ingress = [app SG] on extractor 서비스 포트
+  - renderer ingress = [app SG, extractor SG] on renderer 서비스 포트
   - DB ingress = [app SG] on 3306
 - **서비스 포트를 공개하는 것은 core 뿐**이다. 0.0.0.0/0 인바운드(80·443) + nginx TLS 를 연다.
   앱 포트(blue·green 슬롯)는 외부에 노출하지 않고 nginx 가 localhost 로 forward 한다. core SG 의
   ingress 규칙은 콘솔/CLI 가 권위를 가지며 terraform 은 `ignore_changes = [ingress]` 로 덮어쓰지 않는다.
+- **포트 체계.** 서비스마다 번호 하나를 두고, 입구·슬롯·컨테이너 포트를 그 번호에서 정한다.
+  - 번호의 정본은 `contracts/ports.json` 하나다. 배포·SG·CI·호출 주소는 이 파일을 읽고, 다른 곳에
+    숫자를 적지 않는다. 피할 포트와 형식은 `contracts/ports.test.sh` 가 CI 에서 검사한다.
+  - 입구는 박스의 nginx 가 서비스 번호로 연다. core 만 예외로 443 을 공개한다.
+  - 슬롯은 서비스 번호 앞에 1(blue)·2(green)를 붙인 번호이고 `127.0.0.1` 에만 바인딩한다. 이 계산은
+    `blocks/deploy_slot.sh --service-port` 만 한다.
+  - 앱은 env `PORT` 로 듣는다. 배포 블록이 정본 값을 넘긴다. 코드에는 로컬 개발용 기본값을 두고,
+    `PORT` 없이 기본값으로 뜨면 WARN 로그를 남긴다. 배포가 값을 빠뜨린 것을 로그로 드러내기 위해서다.
+  - 서비스끼리 부르는 주소는 호출자 배포가 `blocks/service_url.sh` 로 매번 계산한다(정본의 Name 태그로
+    사설 IP 조회). 시크릿·SSM 에 주소를 적어 두면 포트나 박스가 바뀔 때 조용히 낡는다.
+  - 번호를 옮길 때는 옛 입구와 새 입구를 함께 열고, 호출자를 옮긴 뒤 옛 입구를 닫는다. 배포는
+    `--legacy-slot` 으로 서빙 중인 옛 슬롯을 알아본다. 새 슬롯 앞자리 1·2 가 옛 번호와 겹치지 않아
+    두 입구를 함께 열 수 있다.
 - **egress 는 모든 박스가 전체 개방**(0.0.0.0/0). 외부 몰 fetch·LLM·렌더 호출과 SSM·S3·이미지
   pull 에 필요하다.
 
