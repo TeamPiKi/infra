@@ -283,7 +283,7 @@ prometheus.exporter.unix "host" {
     // 이 값은 병합이 아니라 **대체**다 - 지정하는 순간 Alloy 기본 목록이 통째로 무효가 되므로, 기본값을
     // 전부 옮겨 적은 뒤 우리 것(tmpfs)만 더해야 한다. /snap 이 그동안 수집되던 것도 이 함정 때문이었다:
     // 기본값엔 squashfs 가 있는데 우리 목록에서 빠져 제외가 풀려 있었다. 기본값 정본은
-    // grafana/alloy v1.16.1 internal/static/integrations/node_exporter/config.go 의
+    // grafana/alloy v1.20.1 internal/static/integrations/node_exporter/config.go 의
     // DefaultConfig.FilesystemFSTypesExclude - Alloy 를 올릴 때 이 목록도 대조한다.
     fs_types_exclude     = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|tmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
     mount_timeout        = "5s"
@@ -309,6 +309,50 @@ prometheus.scrape "host" {
   forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
   // 앱 메트릭과 같은 이유로 60s (위 prometheus.scrape "containers" 주석 참고).
   scrape_interval = "60s"
+}
+
+// ── 컨테이너 메모리: cAdvisor ──
+// JVM 힙과 호스트 메모리로는 컨테이너가 자기 한도에 붙었는지 안 보인다(TeamPiKi/infra#135).
+// 라벨 없는 MySQL·Redis 에도 한도가 있어 라벨 opt-in 과 달리 박스의 모든 컨테이너를 걷는다.
+prometheus.exporter.cadvisor "containers" {
+  docker_only            = true
+  enabled_metrics        = ["memory"]
+  store_container_labels = false
+}
+
+prometheus.scrape "cadvisor" {
+  targets         = prometheus.exporter.cadvisor.containers.targets
+  forward_to      = [prometheus.relabel.cadvisor.receiver]
+  scrape_interval = "60s"
+}
+
+prometheus.relabel "cadvisor" {
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+
+  // memory 만 켜도 컨테이너당 약 30개가 나온다. 한도 대비 사용량·스왑·한도 도달 횟수만 남긴다.
+  rule {
+    source_labels = ["__name__"]
+    regex         = "container_(memory_(usage_bytes|working_set_bytes|swap|events_max_total)|spec_memory_(limit|swap_limit)_bytes)"
+    action        = "keep"
+  }
+
+  // name 이 빈 시계열은 박스 전체(root cgroup)라 호스트 메트릭과 겹친다.
+  rule {
+    source_labels = ["name"]
+    regex         = ""
+    action        = "drop"
+  }
+
+  rule {
+    source_labels = ["name"]
+    target_label  = "container"
+  }
+
+  // id(cgroup 경로)·image(배포 태그)는 배포마다 바뀌어 시계열을 새로 만든다.
+  rule {
+    regex  = "id|image|name"
+    action = "labeldrop"
+  }
 }
 
 // ── 트레이스: 앱 OTLP push → Grafana Cloud (Tempo) ──
