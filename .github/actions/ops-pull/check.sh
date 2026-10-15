@@ -44,7 +44,11 @@ done
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
 # quotePath 를 끄지 않으면 한글 경로가 8진 이스케이프로 찍혀 금지어 검사를 빠져나간다.
-DIFF=(git -c core.quotePath=false diff --cached --no-renames --no-ext-diff --no-textconv --no-color)
+# attr.tree 를 빈 트리로 두어 작업 트리의 .gitattributes 가 바이너리 판정(diff·binary 속성)을 바꾸지 못하게 한다.
+DIFF=(git -c core.quotePath=false -c attr.tree=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+  diff --cached --no-renames --no-ext-diff --no-textconv --no-color)
+MAX_FILES=20
+MAX_LINES=800
 
 status=0
 "${DIFF[@]}" --quiet || status=$?
@@ -58,14 +62,25 @@ esac
 "${DIFF[@]}" --raw -z > "$TMP"
 while IFS= read -r -d '' meta && IFS= read -r -d '' path; do
   case "$path" in .github|.github/*) reject "touches .github";; esac
+  # 속성 파일은 리뷰 화면에서 diff 를 접게(linguist-generated) 하거나 필터·서브모듈을 끌어들인다.
+  case "/$path" in */.gitattributes|*/.lfsconfig|*/.gitmodules) reject "touches git config file";; esac
   read -r old_mode new_mode _ <<<"${meta#:}"
   case " $old_mode $new_mode " in *" 120000 "*|*" 160000 "*) reject "symlink or submodule";; esac
 done < "$TMP"
 
+# 큰 diff 는 GitHub 이 리뷰 화면에서 접어 사람의 확인을 비켜 간다. 루틴의 패치는 작은 것만 받는다.
 "${DIFF[@]}" --numstat -z > "$TMP"
+FILES=0
+LINES=0
 while IFS= read -r -d '' rec; do
   case "$rec" in -$'\t'-$'\t'*) reject "binary patch";; esac
+  IFS=$'\t' read -r added deleted _ <<<"$rec"
+  FILES=$((FILES + 1))
+  LINES=$((LINES + added + deleted))
 done < "$TMP"
+if [ "$FILES" -gt "$MAX_FILES" ] || [ "$LINES" -gt "$MAX_LINES" ]; then
+  reject "too large"
+fi
 
 [ -n "$LEAK_GUARD" ] || exit 0
 

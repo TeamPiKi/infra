@@ -77,8 +77,11 @@ jobs:
       - name: Run ops-pull check.sh self-test
         run: ./.github/actions/ops-pull/check.test.sh
 
-      - name: Run ops-pull pull.sh self-test
-        run: ./.github/actions/ops-pull/pull.test.sh
+      - name: Run ops-pull scan.sh self-test
+        run: ./.github/actions/ops-pull/scan.test.sh
+
+      - name: Run ops-pull open.sh self-test
+        run: ./.github/actions/ops-pull/open.test.sh
 
   contracts-proto:
     name: contracts-proto

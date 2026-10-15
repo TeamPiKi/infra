@@ -1,38 +1,60 @@
 name: ops-pull
 description: >-
-  비공개 ops repo 에서 사람이 확인한 커밋의 patches 항목 하나를 검사해 autofix/<id> PR 로 열고, 그 PR 의 승인 대기 CI 를 승인한다.
+  비공개 ops repo 의 patches 항목을 검사해 autofix/<id> 브랜치로 올린다. 사람이 확인하기 전에는 PR 을 열지 않는다.
+  scan: 아직 올리지 않은 항목 하나를 찾아 outputs.pending 으로 낸다.
+  branch: 찾은 항목을 브랜치로만 올린다. 사람이 PR 작성 화면에서 diff 를 보고 PR 을 만든다. 비공개 repo 용.
+  pr: 사람이 승인한 job 에서 확인한 커밋의 항목 하나로 PR 을 열고 그 PR 의 승인 대기 CI 를 승인한다. 공개 repo 용.
   .github 경로·바이너리·심볼릭 링크를 바꾸는 패치는 거부하고, 공개 repo 면 URL·금지어가 든 패치도 거부한다.
-  호출자는 앞에서 actions/checkout 으로 이 repo 를 받고 job 에 contents·pull-requests·actions 쓰기를 준다.
+  호출자는 앞에서 actions/checkout 으로 이 repo 를 받는다.
 
 inputs:
-  id:
-    description: 열 patches 항목의 id (YYYYMMDD-N). ops 이슈에 적혀 있다
-    required: true
-  ops-commit:
-    description: 사람이 확인한 ops 커밋 sha (40자). ops 이슈에 적혀 있다
+  mode:
+    description: scan, branch, pr 중 하나
     required: true
   ops-deploy-key:
     description: ops 에 등록된 배포 키의 개인 키
     required: true
+  id:
+    description: pr 에서 열 항목의 id (YYYYMMDD-N)
+    default: ''
+  ops-commit:
+    description: pr 에서 항목을 받을 ops 커밋 sha (40자). scan 이 낸 값
+    default: ''
   ops-repo:
     description: 패치를 보관하는 비공개 repo (owner/name)
     default: TeamPiKi/ops
   base:
-    description: PR base 브랜치
+    description: base 브랜치
     default: main
+  window-days:
+    description: 만든 지 이 일수가 지난 항목은 보지 않는다. 사람이 지운 브랜치나 거절한 승인이 계속 되살아나지 않게 한다
+    default: '2'
   deny-pattern:
-    description: 공개 repo 면 필수. 거부할 금지어의 확장 정규식. 단어 목록이 공개 코드에 남지 않게 시크릿으로 넘긴다
+    description: 공개 repo 의 pr 에서 필수. 거부할 금지어의 확장 정규식. 단어 목록이 공개 코드에 남지 않게 시크릿으로 넘긴다
     default: ''
   github-token:
-    description: PR 생성·CI 승인에 쓰는 토큰
+    description: 브랜치 push·PR 생성·CI 승인에 쓰는 토큰
     default: ${{ github.token }}
+
+outputs:
+  pending:
+    description: 'scan(최대 1건)·branch 가 찾은 항목. [{"id","commit"}] JSON. commit 은 항목을 만든 커밋 sha 40자'
+    value: ${{ steps.scan.outputs.pending }}
 
 runs:
   using: composite
   steps:
-    - name: Fetch reviewed ops commit
+    - name: Check mode
       shell: bash
       env:
+        MODE: ${{ inputs.mode }}
+      run: |
+        case "$MODE" in scan|branch|pr) ;; *) echo "::error::mode must be scan, branch or pr"; exit 2;; esac
+
+    - name: Fetch ops
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
         OPS_REPO: ${{ inputs.ops-repo }}
         OPS_KEY: ${{ inputs.ops-deploy-key }}
         OPS_COMMIT: ${{ inputs.ops-commit }}
@@ -41,14 +63,48 @@ runs:
         key="$RUNNER_TEMP/ops.key"
         trap 'rm -f "$key"' EXIT
         printf '%s\n' "$OPS_KEY" > "$key"
+        if [ "$MODE" = pr ]; then target=(--ref "$OPS_COMMIT"); else target=(--branch main); fi
         GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
-          "$GITHUB_ACTION_PATH/fetch.sh" --url "git@github.com:$OPS_REPO.git" --ref "$OPS_COMMIT" --dest "$RUNNER_TEMP/ops"
+          "$GITHUB_ACTION_PATH/fetch.sh" --url "git@github.com:$OPS_REPO.git" "${target[@]}" --dest "$RUNNER_TEMP/ops"
+
+    - name: Scan
+      id: scan
+      if: inputs.mode != 'pr'
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        WINDOW_DAYS: ${{ inputs.window-days }}
+      run: |
+        "$GITHUB_ACTION_PATH/scan.sh" --ops "$RUNNER_TEMP/ops" --window-days "$WINDOW_DAYS" > "$RUNNER_TEMP/pending.txt"
+        # 승인은 한 실행에서 그 환경을 기다리는 job 을 한꺼번에 풀어, 승인 하나가 항목 하나에만 닿게 한 건씩 낸다.
+        if [ "$MODE" = scan ]; then
+          head -n 1 "$RUNNER_TEMP/pending.txt" > "$RUNNER_TEMP/first.txt"
+          mv "$RUNNER_TEMP/first.txt" "$RUNNER_TEMP/pending.txt"
+        fi
+        pending=$(jq -cRn '[inputs | select(length > 0) | split(" ") | {id: .[0], commit: .[1]}]' < "$RUNNER_TEMP/pending.txt")
+        echo "pending=$pending" >> "$GITHUB_OUTPUT"
+        echo "pending: $(jq length <<<"$pending")"
+
+    - name: Push branches
+      if: inputs.mode == 'branch'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BASE: ${{ inputs.base }}
+      run: |
+        rc=0
+        while read -r id _; do
+          "$GITHUB_ACTION_PATH/open.sh" --patches "$RUNNER_TEMP/ops/patches" --id "$id" --mode branch --base "$BASE" || rc=1
+        done < "$RUNNER_TEMP/pending.txt"
+        exit "$rc"
 
     - name: Open PR
+      if: inputs.mode == 'pr'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         ID: ${{ inputs.id }}
         BASE: ${{ inputs.base }}
         DENY_PATTERN: ${{ inputs.deny-pattern }}
-      run: '"$GITHUB_ACTION_PATH/pull.sh" --patches "$RUNNER_TEMP/ops/patches" --id "$ID" --base "$BASE"'
+      run: '"$GITHUB_ACTION_PATH/open.sh" --patches "$RUNNER_TEMP/ops/patches" --id "$ID" --mode pr --base "$BASE"'

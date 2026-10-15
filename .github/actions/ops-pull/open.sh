@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 #
-# 사람이 고른 ops patches 항목 하나를 autofix/<id> PR 로 열고 그 PR 의 승인 대기 CI 를 승인한다. 사용법은 action.yml.
+# ops patches 항목 하나를 검사해 autofix/<id> 브랜치로 올린다. 사용법은 action.yml.
 # 현재 디렉토리는 이 repo 의 checkout 이어야 하고 origin 으로 push 할 수 있어야 한다.
 #
 # 인자:
 #   --patches  (필수) ops 의 patches 디렉토리. 항목은 <id>/meta.json·patch.diff·pr.md
-#   --id       (필수) 열 항목의 id. YYYYMMDD-N
-#   --base     PR base 브랜치. 기본 main
+#   --id       (필수) 항목 id. YYYYMMDD-N
+#   --mode     (필수) branch: 브랜치만 올린다. 사람이 PR 작성 화면에서 diff 를 보고 PR 을 만든다. 비공개 repo 만
+#              pr: 사람이 승인한 뒤 실행된다. PR 을 열고 그 PR 의 승인 대기 CI 를 승인한다
+#   --base     base 브랜치. 기본 main
 # 환경 변수:
 #   GITHUB_REPOSITORY (필수) owner/name. 항목의 meta.json repo 가 name 과 같아야 한다
-#   GH_TOKEN          (필수) contents·pull-requests·actions 쓰기
+#   GH_TOKEN          (필수) branch 는 contents 쓰기, pr 은 contents·pull-requests·actions 쓰기
 #   DENY_PATTERN      공개 repo 면 필수. check.sh 로 넘어간다
 #
-# 종료 코드: PR 을 열었거나 이미 있음 0, 거부·실패 1, 인자 오류 2.
+# 종료 코드: 올렸거나 이미 있음 0, 거부·실패 1, 인자 오류 2.
 # 공개 repo 의 Actions 로그에 실리므로 id·PR 번호·사유 밖의 값을 출력하지 않는다.
 
 set -euo pipefail
@@ -20,12 +22,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATCHES=""
 ID=""
+MODE=""
 BASE="main"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --patches) PATCHES="${2:-}"; shift 2;;
     --id)      ID="${2:-}"; shift 2;;
+    --mode)    MODE="${2:-}"; shift 2;;
     --base)    BASE="${2:-}"; shift 2;;
     *) echo "unknown arg: $1" >&2; exit 2;;
   esac
@@ -33,6 +37,7 @@ done
 
 [ -d "$PATCHES" ] || { echo "--patches must be a directory" >&2; exit 2; }
 [[ "$ID" =~ ^[0-9]{8}-[0-9]{1,2}$ ]] || { echo "--id must be YYYYMMDD-N" >&2; exit 2; }
+case "$MODE" in branch|pr) ;; *) echo "--mode must be branch or pr" >&2; exit 2;; esac
 [ -n "$BASE" ] || { echo "--base is empty" >&2; exit 2; }
 [ -n "${GITHUB_REPOSITORY:-}" ] || { echo "GITHUB_REPOSITORY is required" >&2; exit 2; }
 [ -n "${GH_TOKEN:-}" ] || { echo "GH_TOKEN is required" >&2; exit 2; }
@@ -45,10 +50,12 @@ BRANCH="autofix/$ID"
 
 fail() { echo "::error::$ID: $1"; exit 1; }
 
-# 공개 repo 는 PR 이 열리는 순간 공개되어 URL·금지어 검사를 켠다. 입력값이 아니라 repo 설정으로 정해 설정 실수에 닫힌다.
+# 공개 여부는 입력값이 아니라 repo 설정으로 정해 설정 실수에 닫힌다.
+# 공개 repo 는 브랜치를 올리는 순간 공개되어 사람의 승인 뒤(pr)에만 올리고 URL·금지어 검사를 켠다.
 PRIVATE=$(gh api "$API" --jq .private)
 GUARD=()
 if [ "$PRIVATE" != true ]; then
+  [ "$MODE" = pr ] || { echo "a public repository accepts only --mode pr" >&2; exit 2; }
   [ -n "${DENY_PATTERN:-}" ] || { echo "DENY_PATTERN is required for a public repository" >&2; exit 2; }
   GUARD=(--leak-guard)
 fi
@@ -58,10 +65,14 @@ if [ -L "$ENTRY" ] || [ ! -d "$ENTRY" ]; then
 fi
 [ "$(jq -r '.repo // empty' "$ENTRY/meta.json" 2>/dev/null)" = "$NAME" ] || fail "not for this repository"
 
-# 닫힌 PR 도 센다. 머지 뒤 브랜치를 지워도 같은 패치를 다시 열지 않는다.
+# 닫힌 PR 도 센다. 머지 뒤 브랜치를 지워도 같은 패치를 다시 올리지 않는다.
 COUNT=$(gh api "$API/pulls?state=all&head=$OWNER:$BRANCH&per_page=1" --jq length)
 if [ "$COUNT" != 0 ]; then
   echo "$ID: PR exists"
+  exit 0
+fi
+if [ "$MODE" = branch ] && git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+  echo "$ID: branch exists"
   exit 0
 fi
 
@@ -83,11 +94,18 @@ if ! REASON=$("$SCRIPT_DIR/check.sh" "$ENTRY" ${GUARD[@]+"${GUARD[@]}"}); then
   fail "rejected (${REASON:-check error})"
 fi
 
-TITLE=$(head -n 1 "$ENTRY/pr.md")
+# 커밋이 하나뿐이면 GitHub 의 PR 작성 화면이 커밋 메시지로 제목·본문을 채운다. 본문의 마크다운 제목(#)이 지워지지 않게 cleanup 을 whitespace 로 둔다.
 git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-  commit -q --no-verify -m "$TITLE"
+  commit -q --no-verify --cleanup=whitespace -F "$ENTRY/pr.md"
 SHA=$(git rev-parse HEAD)
 git push -q -f origin "$BRANCH" 2>/dev/null || fail "push failed"
+
+if [ "$MODE" = branch ]; then
+  echo "$ID: branch pushed"
+  exit 0
+fi
+
+TITLE=$(head -n 1 "$ENTRY/pr.md")
 tail -n +3 "$ENTRY/pr.md" > "$WORK/body.md"
 NUMBER=$(gh api "$API/pulls" -f title="$TITLE" -f head="$BRANCH" -f base="$BASE" -F body=@"$WORK/body.md" --jq .number) \
   || fail "could not open PR"

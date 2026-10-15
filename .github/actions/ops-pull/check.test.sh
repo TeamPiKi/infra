@@ -37,6 +37,8 @@ printf 'class Foo {\n  int a = 1;\n}\n' > "$REPO/src/Foo.java"
 printf 'class Bar {\n  String u = "https://shop.co.kr/";\n}\n' > "$REPO/src/Bar.java"
 printf 'name: a\n' > "$REPO/.github/actions/a/action.yml"
 printf 'on: push\n' > "$REPO/ci.yml"
+# 이 repo 자신의 속성 파일이 바이너리 판정을 바꾸지 못하는지 본다.
+printf '*.bin diff\n' > "$REPO/.gitattributes"
 g -C "$REPO" add -A
 g -C "$REPO" commit -qm base
 g -C "$REPO" tag base
@@ -146,8 +148,44 @@ printf 'a\0b' > "$BIN/blob.dat"
 g -C "$BIN" add blob.dat
 g -C "$BIN" diff --cached --binary > "$P/b1"
 check "바이너리" "1:binary patch" "$(verdict "$P/b1" "$PR_OK")"
+g -C "$BIN" reset -q --hard
+printf 'a\0b' > "$BIN/blob.bin"
+g -C "$BIN" add blob.bin
+g -C "$BIN" -c attr.tree=4b825dc642cb6eb9a060e54bf8d69288fbee4904 diff --cached --binary > "$P/b2"
+check "repo 속성이 diff 라고 해도 바이너리" "1:binary patch" "$(verdict "$P/b2" "$PR_OK")"
 
-# 4. URL (leak-guard)
+# 4. 속성 파일·크기
+check ".gitattributes 추가" "1:touches git config file" "$(verdict "$(patch_file a1 'diff --git a/.gitattributes b/.gitattributes
+--- a/.gitattributes
++++ b/.gitattributes
+@@ -1 +1,2 @@
+ *.bin diff
++src/Foo.java linguist-generated=true')" "$PR_OK")"
+check "하위 폴더 .gitmodules" "1:touches git config file" "$(verdict "$(patch_file a2 'diff --git a/src/.gitmodules b/src/.gitmodules
+new file mode 100644
+--- /dev/null
++++ b/src/.gitmodules
+@@ -0,0 +1 @@
++x')" "$PR_OK")"
+check ".lfsconfig" "1:touches git config file" "$(verdict "$(patch_file a3 'diff --git a/.lfsconfig b/.lfsconfig
+new file mode 100644
+--- /dev/null
++++ b/.lfsconfig
+@@ -0,0 +1 @@
++x')" "$PR_OK")"
+g -C "$BIN" reset -q --hard
+printf '*.dat diff\n' > "$BIN/.gitattributes"
+printf 'a\0b\n' > "$BIN/evil.dat"
+g -C "$BIN" add .gitattributes evil.dat
+g -C "$BIN" diff --cached --binary > "$P/a4"
+case "$(verdict "$P/a4" "$PR_OK")" in apply-failed|"1:touches git config file") R=blocked;; *) R=passed;; esac
+check "속성으로 바이너리를 글자로 위장" blocked "$R"
+{ for i in $(seq 1 21); do printf 'diff --git a/src/f%s b/src/f%s\nnew file mode 100644\n--- /dev/null\n+++ b/src/f%s\n@@ -0,0 +1 @@\n+x\n' "$i" "$i" "$i"; done; } > "$P/big1"
+check "파일 21개" "1:too large" "$(verdict "$P/big1" "$PR_OK")"
+{ printf 'diff --git a/src/big b/src/big\nnew file mode 100644\n--- /dev/null\n+++ b/src/big\n@@ -0,0 +1,801 @@\n'; for i in $(seq 1 801); do printf '+%s\n' "$i"; done; } > "$P/big2"
+check "줄 801개" "1:too large" "$(verdict "$P/big2" "$PR_OK")"
+
+# 5. URL (leak-guard)
 URL_PR=$'Foo 값 변경\n\n- 실패 URL https://Naver.ME/abc 재현'
 check "본문 URL" "1:url" "$(verdict "$CLEAN" "$URL_PR" --leak-guard)"
 check "본문 URL leak-guard 끔" "0:" "$(verdict "$CLEAN" "$URL_PR")"
@@ -174,7 +212,7 @@ OUT=$(verdict "$CLEAN" "$URL_PR" --leak-guard)
 case "$OUT" in *[Nn]aver*) R=leaked;; *) R=no-leak;; esac
 check "거부 사유에 URL 없음" no-leak "$R"
 
-# 5. 금지어 (leak-guard)
+# 6. 금지어 (leak-guard)
 check "추가 줄 금지어(대소문자 무시)" "1:deny word" "$(verdict "$(foo_change d1 '  // TopSecret path')" "$PR_OK" --leak-guard)"
 check "본문 한글 금지어" "1:deny word" "$(verdict "$CLEAN" $'Foo 값 변경\n\n- 금지어 포함' --leak-guard)"
 check "한글 경로의 금지어" "1:deny word" "$(verdict "$(patch_file d3 'diff --git a/src/금지어/a.txt b/src/금지어/a.txt
