@@ -90,6 +90,25 @@ PERM=$(stat -c '%a' "$RUN_HOME/.ssh/piki-box.key" 2>/dev/null || stat -f '%Lp' "
 check "키 파일 권한 600" 600 "$PERM"
 case "$OUT" in *TOPSECRET*) check "키 출력 누출 없음" no-leak leaked;; *) check "키 출력 누출 없음" no-leak no-leak;; esac
 
+# 5. 별칭·프로필 (같은 Name 태그의 다른 계정 박스)
+SSH_KEY="$KEY" FAKE_IDS=i-1 run --instance-name box --user ubuntu --alias 'a b' >/dev/null 2>&1
+check "공백 든 별칭 -> exit 2" 2 "$?"
+SSH_KEY="$KEY" FAKE_IDS=i-1 run --instance-name box --user ubuntu --profile $'p\nHost x' >/dev/null 2>&1
+check "개행 든 프로필 -> exit 2" 2 "$?"
+rm -f "$CONFIG"
+OUT=$(SSH_KEY="$KEY" FAKE_IDS=i-0src run --instance-name piki-box --user ubuntu --alias src-piki-box --profile src 2>&1)
+check "별칭 성공 -> stdout 은 인스턴스 id" i-0src "$OUT"
+check "조회도 프로필로" \
+  "--profile src ec2 describe-instances --filters Name=tag:Name,Values=piki-box Name=instance-state-name,Values=running --query Reservations[].Instances[].InstanceId --output text" \
+  "$(cat "$WORKDIR/aws-args")"
+check "별칭 Host" "Host src-piki-box" "$(grep '^Host ' "$CONFIG")"
+check "접속도 프로필로" \
+  "ProxyCommand aws --profile src ssm start-session --target %h --document-name AWS-StartSSHSession --parameters portNumber=%p" \
+  "$(grep -o 'ProxyCommand .*' "$CONFIG")"
+check "키 파일 이름은 별칭" "IdentityFile $RUN_HOME/.ssh/src-piki-box.key" "$(grep -o 'IdentityFile .*' "$CONFIG")"
+SSH_KEY="$KEY" FAKE_IDS=i-0new run --instance-name piki-box --user ubuntu >/dev/null 2>&1
+check "같은 Name 태그 두 별칭 공존" "Host src-piki-box|Host piki-box" "$(grep '^Host ' "$CONFIG" | paste -sd'|' -)"
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES failure(s)" >&2
   exit 1
