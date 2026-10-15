@@ -56,6 +56,7 @@ g -C "$OPS_SRC" add -A
 GIT_COMMITTER_DATE="$(( $(date +%s) + 10 * 86400 )) +0000" g -C "$OPS_SRC" commit -qm future
 add_entry 20261015-4 extractor
 add_entry 20261015-5 extractor
+add_entry 20261015-8 extractor
 add_entry bad.id extractor
 ln -s 20261015-1 "$OPS_SRC/patches/20261015-6"
 g -C "$OPS_SRC" add -A
@@ -65,7 +66,7 @@ g clone -q --bare "$OPS_SRC" "$OPS_BARE"
 OPS="$WORKDIR/ops"
 "$FETCH" --url "$OPS_BARE" --branch main --dest "$OPS" >/dev/null 2>&1
 
-# 이 repo: origin 에 autofix/20261015-4 가 이미 있음. 20261015-5 는 PR 이 있음(가짜 gh).
+# 이 repo: origin 에 autofix/20261015-4 가 이미 있음. 20261015-5 는 PR, 20261015-8 은 승인 이슈가 있음(가짜 gh).
 ORIGIN="$WORKDIR/origin.git"
 REPO="$WORKDIR/repo"
 g init -q --bare "$ORIGIN"
@@ -79,6 +80,7 @@ cat > "$FAKE/gh" <<'EOF'
 #!/usr/bin/env bash
 all="$*"
 case "$all" in
+  *"/issues?state=all"*) printf 'ops 패치 20261015-8 승인\nops 패치 20261015-1 승인 아님\n';;
   *"/pulls?state=all&head=o:autofix/20261015-5&"*) echo 1;;
   *"/pulls?state=all&head=o:autofix/"*) echo 0;;
   *) echo "unexpected gh call: $all" >&2; exit 1;;
@@ -99,7 +101,7 @@ check "기간이 숫자 아님 -> exit 2" 2 "$?"
 # 2. 찾기
 OUT=$(run --ops "$OPS" 2>"$WORKDIR/err")
 check "exit 0" 0 "$?"
-check "새 항목 하나와 만든 커밋" "20261015-1 $FRESH" "$OUT"
+check "새 항목 하나와 만든 커밋 (승인 이슈 제목은 정확히 맞아야 건너뜀)" "20261015-1 $FRESH" "$OUT"
 check "만든 뒤 고친 항목은 경고" yes "$(grep -q '20261015-3: changed after creation' "$WORKDIR/err" && echo yes || echo no)"
 check "미래 날짜 항목은 경고" yes "$(grep -q '20261015-7: committed in the future' "$WORKDIR/err" && echo yes || echo no)"
 OUT=$(run --ops "$OPS" --window-days 30 2>/dev/null)

@@ -118,7 +118,6 @@ entry 20261015-4 extractor "$PATCH_GH"    $'액션 추가\n\n- 본문'
 entry 20261015-5 extractor "$PATCH_STALE" $'안 맞는 패치\n\n- 본문'
 entry 20261015-6 extractor "$PATCH_OK"    $'URL 포함\n\n- https://naver.me/abc'
 entry 20261015-7 extractor "$PATCH_OK"    $'CI 없음\n\n- 본문'
-entry 20261015-8 extractor "$PATCH_OK"    "$PR_MD"
 
 OUT=""
 CODE=0
@@ -134,21 +133,20 @@ run() {
 }
 has() { case "$OUT" in *"$1"*) echo yes;; *) echo no;; esac; }
 
+
 # 1. 인자 오류
-run true '' --id 20261015 --mode pr
+run true '' --id 20261015
 check "id 형식 오류 -> exit 2" 2 "$CODE"
-run true '' --id '20261015-1/../x' --mode pr
+run true '' --id '20261015-1/../x'
 check "경로가 섞인 id -> exit 2" 2 "$CODE"
-run true '' --id 20261015-1 --mode push
-check "모르는 mode -> exit 2" 2 "$CODE"
-run false 'x' --id 20261015-1 --mode branch
-check "공개 repo 에 branch -> exit 2" 2 "$CODE"
-run false '' --id 20261015-1 --mode pr
+run true '' --id 20261015-1 --mode pr
+check "모르는 인자 -> exit 2" 2 "$CODE"
+run false '' --id 20261015-1
 check "공개 repo 에 금지어 없음 -> exit 2" 2 "$CODE"
 
-# 2. pr: PR 개시와 CI 승인
+# 2. PR 개시와 CI 승인
 : > "$WORKDIR/gh.log"
-run true '' --id 20261015-1 --mode pr
+run true '' --id 20261015-1
 check "PR 개시 exit 0" 0 "$CODE"
 check "PR 개시 로그" yes "$(has '20261015-1: opened #7')"
 check "패치 적용" "  int a = 2;" "$(g -C "$ORIGIN" show autofix/20261015-1:Foo.java | sed -n 2p)"
@@ -163,38 +161,28 @@ check "승인은 실행마다 1회" 2 "$(grep -c '/approve' "$WORKDIR/gh.log")"
 check "checkout 은 base 로 복귀" "$MAIN_SHA" "$(g -C "$REPO" rev-parse HEAD)"
 check "작업 트리 깨끗함" "" "$(g -C "$REPO" status --porcelain)"
 
-# 3. branch: 브랜치만 올림
-: > "$WORKDIR/gh.log"
-run true '' --id 20261015-8 --mode branch
-check "branch exit 0" "0 yes" "$CODE $(has '20261015-8: branch pushed')"
-check "branch 는 PR 을 만들지 않음" 0 "$(grep -c '^api repos/o/extractor/pulls ' "$WORKDIR/gh.log")"
-check "branch 는 CI 를 승인하지 않음" 0 "$(grep -c 'approve' "$WORKDIR/gh.log")"
-check "branch 커밋 본문 유지" "## 왜" "$(g -C "$ORIGIN" log -1 --format=%b autofix/20261015-8 | head -n 1)"
-run true '' --id 20261015-8 --mode branch
-check "이미 올린 브랜치 -> exit 0" "0 yes" "$CODE $(has '20261015-8: branch exists')"
-
-# 4. 올리지 않는 경우
-run true '' --id 20261015-3 --mode pr
+# 3. 열지 않는 경우
+run true '' --id 20261015-3
 check "이미 연 PR -> exit 0" "0 yes" "$CODE $(has '20261015-3: PR exists')"
-run true '' --id 20261015-2 --mode pr
+run true '' --id 20261015-2
 check "다른 repo 몫 -> exit 1" "1 yes" "$CODE $(has '20261015-2: not for this repository')"
-run true '' --id 20261015-9 --mode pr
+run true '' --id 20261015-9
 check "없는 id -> exit 1" "1 yes" "$CODE $(has '20261015-9: not found')"
-run true '' --id 20261015-4 --mode branch
+run true '' --id 20261015-4
 check ".github 패치 거부" "1 yes" "$CODE $(has '20261015-4: rejected (touches .github)')"
-run true '' --id 20261015-5 --mode branch
+run true '' --id 20261015-5
 check "안 맞는 패치" "1 yes" "$CODE $(has '20261015-5: patch does not apply')"
 check "거부 뒤 checkout 은 base 로 복귀" "$MAIN_SHA" "$(g -C "$REPO" rev-parse HEAD)"
-NO_RUNS=1 run true '' --id 20261015-7 --mode pr
+NO_RUNS=1 run true '' --id 20261015-7
 check "승인한 CI 0건 -> exit 1" "1 yes yes" "$CODE $(has '20261015-7: opened #7') $(has '20261015-7: no CI run approved')"
 
-# 5. 공개 repo 는 URL 검사
-run false 'topsecret' --id 20261015-6 --mode pr
+# 4. 공개 repo 는 URL 검사
+run false 'topsecret' --id 20261015-6
 check "공개 repo 는 URL 거부" "1 yes" "$CODE $(has '20261015-6: rejected (url)')"
 check "로그에 URL 없음" no "$(has 'naver')"
 
 BRANCHES=$(g -C "$ORIGIN" for-each-ref --format='%(refname:short)' refs/heads/autofix | tr '\n' ' ')
-check "origin 의 autofix 브랜치" "autofix/20261015-1 autofix/20261015-7 autofix/20261015-8 " "$BRANCHES"
+check "origin 의 autofix 브랜치" "autofix/20261015-1 autofix/20261015-7 " "$BRANCHES"
 
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES failure(s)" >&2

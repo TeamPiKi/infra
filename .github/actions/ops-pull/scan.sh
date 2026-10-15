@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 #
-# ops 에서 이 repo 로 아직 올리지 않은 패치 항목을 찾는다. 사용법은 action.yml.
+# ops 에서 이 repo 에 아직 승인을 요청하지 않은 패치 항목을 찾는다. 사용법은 action.yml.
 # 현재 디렉토리는 이 repo 의 checkout 이어야 한다. origin 의 autofix 브랜치를 본다.
+# 승인 이슈가 한 번 생긴 항목은 이슈가 닫혀도 다시 찾지 않는다. 거절은 이슈를 닫는 것이다.
 #
 # 인자:
 #   --ops          (필수) ops 브랜치의 전체 이력 클론
 #   --window-days  만든 지 이 일수가 지난 항목은 보지 않는다. 기본 2
 # 환경 변수:
 #   GITHUB_REPOSITORY (필수) owner/name. 항목의 meta.json repo 가 name 과 같은 것만 본다
-#   GH_TOKEN          (필수) pull-requests 읽기
+#   GH_TOKEN          (필수) pull-requests·issues 읽기
 #
 # 출력: 대상마다 "<id> <항목을 만든 커밋 sha>" 한 줄.
 # 종료 코드: 성공 0, 인자 오류 2.
@@ -35,6 +36,9 @@ done
 OWNER="${GITHUB_REPOSITORY%%/*}"
 NAME="${GITHUB_REPOSITORY#*/}"
 API="repos/$GITHUB_REPOSITORY"
+# 전체 페이지를 본다. 일부만 보면 이슈가 많이 쌓였을 때 닫힌(거절된) 승인 이슈를 놓쳐 같은 항목을 다시 요청한다.
+REQUESTED=$(gh api --paginate "$API/issues?state=all&per_page=100" \
+  --jq '.[] | select(.user.login == "github-actions[bot]" and .pull_request == null) | .title')
 NOW=$(date +%s)
 SINCE=$(( NOW - WINDOW_DAYS * 86400 ))
 UNTIL=$(( NOW + 3600 ))
@@ -60,6 +64,9 @@ for dir in "$OPS"/patches/*/; do
   fi
   [ "$CREATED" -ge "$SINCE" ] || continue
 
+  if grep -qxF "ops 패치 $id 승인" <<<"$REQUESTED"; then
+    continue
+  fi
   if git ls-remote --exit-code --heads origin "autofix/$id" >/dev/null 2>&1; then
     continue
   fi

@@ -86,6 +86,12 @@ check "제목 빈 줄" "1:empty title" "$(verdict "$CLEAN" $'\n\n- 본문')"
 D="$WORKDIR/nopr"; mkdir -p "$D"; printf '{}\n' > "$D/meta.json"; cp "$CLEAN" "$D/patch.diff"; ln -s "$REPO/.git/config" "$D/pr.md"
 g -C "$REPO" reset -q --hard base
 OUT=$(cd "$REPO" && git apply --index "$CLEAN" && "$CHECK" "$D" 2>/dev/null); check "심볼릭 링크 pr.md" "missing pr.md" "$OUT"
+D="$WORKDIR/extra"; mkdir -p "$D"; printf '{}\n' > "$D/meta.json"; cp "$CLEAN" "$D/patch.diff"; printf '%s\n' "$PR_OK" > "$D/pr.md"; printf 'x\n' > "$D/README.md"
+g -C "$REPO" reset -q --hard base
+OUT=$(cd "$REPO" && git apply --index "$CLEAN" && "$CHECK" "$D" 2>/dev/null); check "항목에 다른 파일" "unexpected file in entry" "$OUT"
+check "pr.md 의 HTML 주석" "1:html in pr.md" "$(verdict "$CLEAN" $'Foo 값 변경\n\n- 본문\n<!-- 숨긴 글 -->')"
+check "pr.md 의 details" "1:html in pr.md" "$(verdict "$CLEAN" $'Foo 값 변경\n\n<details><summary>x</summary>숨김</details>')"
+check "코드 안의 꺾쇠는 허용" "0:" "$(verdict "$CLEAN" $'Foo 값 변경\n\n- `Optional<Product>` 반환\n\n```java\nList<String> a = new ArrayList<>();\n```')"
 D="$WORKDIR/noop"; mkdir -p "$D"; printf '{}\n' > "$D/meta.json"; cp "$CLEAN" "$D/patch.diff"; printf '%s\n' "$PR_OK" > "$D/pr.md"
 g -C "$REPO" reset -q --hard base
 OUT=$(cd "$REPO" && "$CHECK" "$D" 2>/dev/null); check "바뀐 것 없음" "empty patch" "$OUT"
@@ -205,6 +211,9 @@ new file mode 100644
 check "도메인과 포트·경로" "1:url" "$(verdict "$(foo_change u11 '  String u = "shop.co.kr:443/goods/1";')" "$PR_OK" --leak-guard)"
 check "도메인과 쿼리" "1:url" "$(verdict "$(foo_change u12 '  String u = "shop.co.kr?goods=12345";')" "$PR_OK" --leak-guard)"
 check "IP 와 포트·쿼리" "1:url" "$(verdict "$(foo_change u13 '  String u = "13.125.1.2:8080?q=1";')" "$PR_OK" --leak-guard)"
+check "추가 줄 이메일" "1:email" "$(verdict "$(foo_change u14 '  // reporter kim.lee@gmail.com')" "$PR_OK" --leak-guard)"
+check "이메일 leak-guard 끔" "0:" "$(verdict "$(foo_change u15 '  // reporter kim.lee@gmail.com')" "$PR_OK")"
+check "자바 어노테이션은 이메일 아님" "0:" "$(verdict "$(foo_change u16 '  @Override public String a() { return null; }')" "$PR_OK" --leak-guard)"
 check "파일명·줄 번호는 URL 아님" "0:" "$(verdict "$CLEAN" $'Foo 값 변경\n\n- 근거 src/Foo.java:2 와 Bar.java' --leak-guard)"
 check "지우는 줄·문맥 줄의 URL" "0:" "$(verdict "$(patch_file u9 "$(diff_of src/Bar.java 'class Bar {' '  String u = "https://shop.co.kr/";' '  String u = null;')")" "$PR_OK" --leak-guard)"
 check "예시 도메인·localhost 허용" "0:" "$(verdict "$(foo_change u10 '  String u = "https://shop.example.com/p http://localhost:8080/x";')" "$PR_OK" --leak-guard)"

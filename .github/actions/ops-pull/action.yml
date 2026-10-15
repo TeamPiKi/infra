@@ -1,25 +1,18 @@
 name: ops-pull
 description: >-
-  비공개 ops repo 의 patches 항목을 검사해 autofix/<id> 브랜치로 올린다. 사람이 확인하기 전에는 PR 을 열지 않는다.
-  scan: 아직 올리지 않은 항목 하나를 찾아 outputs.pending 으로 낸다.
-  branch: 찾은 항목을 브랜치로만 올린다. 사람이 PR 작성 화면에서 diff 를 보고 PR 을 만든다. 비공개 repo 용.
-  pr: 사람이 승인한 job 에서 확인한 커밋의 항목 하나로 PR 을 열고 그 PR 의 승인 대기 CI 를 승인한다. 공개 repo 용.
-  .github 경로·바이너리·심볼릭 링크를 바꾸는 패치는 거부하고, 공개 repo 면 URL·금지어가 든 패치도 거부한다.
+  비공개 ops repo 의 patches 항목을 사람이 승인한 것만 이 repo 의 autofix/<id> PR 로 연다.
+  request: 아직 승인을 요청하지 않은 항목마다 승인 이슈를 만든다. 예약 실행용.
+  approve: 승인 이슈의 체크박스를 쓰기 권한이 있는 사람이 체크하면 그 이슈의 커밋으로 PR 을 열고 이슈를 닫는다. issues edited 이벤트용.
+  .github 경로·속성 파일·바이너리·심볼릭 링크·큰 diff·pr.md 의 HTML 은 거부하고, 공개 repo 면 URL·이메일·금지어가 든 패치도 거부한다.
   호출자는 앞에서 actions/checkout 으로 이 repo 를 받는다.
 
 inputs:
   mode:
-    description: scan, branch, pr 중 하나
+    description: request 또는 approve
     required: true
   ops-deploy-key:
     description: ops 에 등록된 배포 키의 개인 키
     required: true
-  id:
-    description: pr 에서 열 항목의 id (YYYYMMDD-N)
-    default: ''
-  ops-commit:
-    description: pr 에서 항목을 받을 ops 커밋 sha (40자). scan 이 낸 값
-    default: ''
   ops-repo:
     description: 패치를 보관하는 비공개 repo (owner/name)
     default: TeamPiKi/ops
@@ -27,19 +20,14 @@ inputs:
     description: base 브랜치
     default: main
   window-days:
-    description: 만든 지 이 일수가 지난 항목은 보지 않는다. 사람이 지운 브랜치나 거절한 승인이 계속 되살아나지 않게 한다
+    description: request 에서 만든 지 이 일수가 지난 항목은 보지 않는다
     default: '2'
   deny-pattern:
-    description: 공개 repo 의 pr 에서 필수. 거부할 금지어의 확장 정규식. 단어 목록이 공개 코드에 남지 않게 시크릿으로 넘긴다
+    description: 공개 repo 의 approve 에서 필수. 거부할 금지어의 확장 정규식. 단어 목록이 공개 코드에 남지 않게 시크릿으로 넘긴다
     default: ''
   github-token:
-    description: 브랜치 push·PR 생성·CI 승인에 쓰는 토큰
+    description: 이슈·브랜치·PR 쓰기와 CI 승인에 쓰는 토큰
     default: ${{ github.token }}
-
-outputs:
-  pending:
-    description: 'scan(최대 1건)·branch 가 찾은 항목. [{"id","commit"}] JSON. commit 은 항목을 만든 커밋 sha 40자'
-    value: ${{ steps.scan.outputs.pending }}
 
 runs:
   using: composite
@@ -49,62 +37,83 @@ runs:
       env:
         MODE: ${{ inputs.mode }}
       run: |
-        case "$MODE" in scan|branch|pr) ;; *) echo "::error::mode must be scan, branch or pr"; exit 2;; esac
+        case "$MODE" in request|approve) ;; *) echo "::error::mode must be request or approve"; exit 2;; esac
+
+    - name: Check approval
+      id: gate
+      if: inputs.mode == 'approve'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        out=$("$GITHUB_ACTION_PATH/gate.sh")
+        read -r id commit <<<"$out"
+        echo "id=$id" >> "$GITHUB_OUTPUT"
+        echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
     - name: Fetch ops
+      if: inputs.mode == 'request' || steps.gate.outputs.id != ''
       shell: bash
       env:
         MODE: ${{ inputs.mode }}
         OPS_REPO: ${{ inputs.ops-repo }}
         OPS_KEY: ${{ inputs.ops-deploy-key }}
-        OPS_COMMIT: ${{ inputs.ops-commit }}
+        OPS_COMMIT: ${{ steps.gate.outputs.commit }}
       run: |
         umask 077
         key="$RUNNER_TEMP/ops.key"
         trap 'rm -f "$key"' EXIT
         printf '%s\n' "$OPS_KEY" > "$key"
-        if [ "$MODE" = pr ]; then target=(--ref "$OPS_COMMIT"); else target=(--branch main); fi
+        if [ "$MODE" = approve ]; then target=(--ref "$OPS_COMMIT"); else target=(--branch main); fi
         GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
           "$GITHUB_ACTION_PATH/fetch.sh" --url "git@github.com:$OPS_REPO.git" "${target[@]}" --dest "$RUNNER_TEMP/ops"
 
-    - name: Scan
-      id: scan
-      if: inputs.mode != 'pr'
+    - name: Request approvals
+      if: inputs.mode == 'request'
       shell: bash
       env:
-        MODE: ${{ inputs.mode }}
         GH_TOKEN: ${{ inputs.github-token }}
+        OPS_REPO: ${{ inputs.ops-repo }}
         WINDOW_DAYS: ${{ inputs.window-days }}
       run: |
         "$GITHUB_ACTION_PATH/scan.sh" --ops "$RUNNER_TEMP/ops" --window-days "$WINDOW_DAYS" > "$RUNNER_TEMP/pending.txt"
-        # 승인은 한 실행에서 그 환경을 기다리는 job 을 한꺼번에 풀어, 승인 하나가 항목 하나에만 닿게 한 건씩 낸다.
-        if [ "$MODE" = scan ]; then
-          head -n 1 "$RUNNER_TEMP/pending.txt" > "$RUNNER_TEMP/first.txt"
-          mv "$RUNNER_TEMP/first.txt" "$RUNNER_TEMP/pending.txt"
-        fi
-        pending=$(jq -cRn '[inputs | select(length > 0) | split(" ") | {id: .[0], commit: .[1]}]' < "$RUNNER_TEMP/pending.txt")
-        echo "pending=$pending" >> "$GITHUB_OUTPUT"
-        echo "pending: $(jq length <<<"$pending")"
-
-    - name: Push branches
-      if: inputs.mode == 'branch'
-      shell: bash
-      env:
-        GH_TOKEN: ${{ inputs.github-token }}
-        BASE: ${{ inputs.base }}
-      run: |
+        # 루틴이 항목을 대량으로 만들어도 이슈·알림이 쏟아지지 않게 실행마다 5건까지만 요청한다. 나머지는 다음 실행이 이어 받는다.
+        head -n 5 "$RUNNER_TEMP/pending.txt" > "$RUNNER_TEMP/batch.txt"
         rc=0
-        while read -r id _; do
-          "$GITHUB_ACTION_PATH/open.sh" --patches "$RUNNER_TEMP/ops/patches" --id "$id" --mode branch --base "$BASE" || rc=1
-        done < "$RUNNER_TEMP/pending.txt"
+        while read -r id commit; do
+          number=$("$GITHUB_ACTION_PATH/request.sh" --id "$id" --commit "$commit" --ops-repo "$OPS_REPO") || { rc=1; continue; }
+          echo "$id: approval issue #$number"
+        done < "$RUNNER_TEMP/batch.txt"
         exit "$rc"
 
     - name: Open PR
-      if: inputs.mode == 'pr'
+      if: steps.gate.outputs.id != ''
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
-        ID: ${{ inputs.id }}
+        ID: ${{ steps.gate.outputs.id }}
         BASE: ${{ inputs.base }}
         DENY_PATTERN: ${{ inputs.deny-pattern }}
-      run: '"$GITHUB_ACTION_PATH/open.sh" --patches "$RUNNER_TEMP/ops/patches" --id "$ID" --mode pr --base "$BASE"'
+        ISSUE: ${{ github.event.issue.number }}
+      run: |
+        rc=0
+        "$GITHUB_ACTION_PATH/open.sh" --patches "$RUNNER_TEMP/ops/patches" --id "$ID" --base "$BASE" \
+          | tee "$RUNNER_TEMP/open.txt" || rc=$?
+        number=$(sed -n "s/^$ID: opened #\([0-9][0-9]*\)$/\1/p" "$RUNNER_TEMP/open.txt")
+        last=$(tail -n 1 "$RUNNER_TEMP/open.txt")
+        close=1
+        if [ -n "$number" ] && [ "$rc" = 0 ]; then
+          msg="PR #$number 개시"
+        elif [ -n "$number" ]; then
+          msg="PR #$number 개시. CI 승인 실패라 PR 화면에서 직접 승인 필요"
+        elif [ "$last" = "$ID: PR exists" ]; then
+          msg="이미 PR 이 있음"
+        else
+          msg="PR 을 열지 못함 (${last#*"$ID: "})"
+          close=0
+        fi
+        gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE/comments" -f body="$msg" >/dev/null
+        if [ "$close" = 1 ]; then
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/$ISSUE" -f state=closed -f state_reason=completed >/dev/null
+        fi
+        exit "$rc"

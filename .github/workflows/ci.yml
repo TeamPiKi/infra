@@ -80,6 +80,12 @@ jobs:
       - name: Run ops-pull scan.sh self-test
         run: ./.github/actions/ops-pull/scan.test.sh
 
+      - name: Run ops-pull request.sh self-test
+        run: ./.github/actions/ops-pull/request.test.sh
+
+      - name: Run ops-pull gate.sh self-test
+        run: ./.github/actions/ops-pull/gate.test.sh
+
       - name: Run ops-pull open.sh self-test
         run: ./.github/actions/ops-pull/open.test.sh
 

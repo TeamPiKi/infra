@@ -6,7 +6,7 @@
 #
 # 인자:
 #   <entry>       (필수) patches 항목 디렉토리. meta.json·patch.diff·pr.md 를 담는다
-#   --leak-guard  PR 본문과 추가 줄에 URL·금지어가 있으면 거부한다. 공개 repo 용
+#   --leak-guard  PR 본문과 추가 줄에 URL·이메일·금지어가 있으면 거부한다. 공개 repo 용
 # 환경 변수:
 #   DENY_PATTERN  --leak-guard 면 필수. 금지어 확장 정규식(대소문자 무시). 단어 목록이 공개 코드에 남지 않게 시크릿으로 받는다
 #
@@ -39,7 +39,19 @@ for f in meta.json patch.diff pr.md; do
     reject "missing $f"
   fi
 done
+# 다른 파일(README.md 등)은 사람이 보는 ops 화면에 렌더링되어 확인을 흐린다.
+shopt -s dotglob nullglob
+for f in "$ENTRY"/*; do
+  case "${f##*/}" in meta.json|patch.diff|pr.md) ;; *) reject "unexpected file in entry";; esac
+done
+shopt -u dotglob nullglob
 [ -n "$(head -n 1 "$ENTRY/pr.md" | tr -d '[:space:]')" ] || reject "empty title"
+# HTML 주석·details 같은 태그는 렌더링된 화면에서 숨지만 PR 본문과 커밋 메시지에는 그대로 실린다. 코드 안의 꺾쇠는 보이므로 뺀다.
+# shellcheck disable=SC2016 # 백틱은 마크다운 코드 표시라 확장하지 않는다
+PROSE=$(LC_ALL=C awk '/^[[:space:]]*```/ { fence = !fence; next } !fence' "$ENTRY/pr.md" | LC_ALL=C sed 's/`[^`]*`//g')
+if LC_ALL=C grep -qaE '<[A-Za-z!/?]' <<<"$PROSE"; then
+  reject "html in pr.md"
+fi
 
 TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
@@ -102,6 +114,10 @@ while IFS= read -r h; do
     reject "url"
   fi
 done <<<"$HOSTS"
+
+if LC_ALL=C grep -qaE '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}' <<<"$TEXT"; then
+  reject "email"
+fi
 
 status=0
 LC_ALL=C grep -qaiE -- "$DENY_PATTERN" <<<"$TEXT" || status=$?
