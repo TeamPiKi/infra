@@ -16,7 +16,7 @@
 ## 수집 대상 = docker label opt-in
 
 다서비스가 한 박스에 동거할 수 있으므로, 서비스명을 열거하는 regex 대신 **컨테이너 라벨로
-opt-in** 한다. 라벨이 없는 컨테이너(redis·mysql·alloy 자기 등)는 어떤 신호도 수집되지 않는다.
+opt-in** 한다. 라벨이 없는 컨테이너(redis·mysql·alloy 자기 등)는 메트릭·로그가 수집되지 않는다(컨테이너 메모리 예외는 아래).
 
 | 라벨 | 필수 | 기본 | 뜻 |
 |---|---|---|---|
@@ -28,6 +28,8 @@ opt-in** 한다. 라벨이 없는 컨테이너(redis·mysql·alloy 자기 등)�
 - 메트릭은 `piki.observe`+`piki.service`+`piki.metrics.port` **셋 다** 있어야 수집된다.
 - 로그는 `piki.observe`+`piki.service` 둘만 있으면 수집된다(포트 불필요).
 - 라벨 이름의 `.` 은 Alloy docker SD 에서 `__meta_docker_container_label_piki_*` 로 매핑된다.
+- **예외: 컨테이너 메모리(cAdvisor)는 라벨과 무관하게 박스의 모든 컨테이너를 걷는다.** 라벨 없는
+  MySQL·Redis 에도 메모리 한도가 있어서다. 남기는 지표는 한도 대비 사용량·스왑·한도 도달 횟수뿐이다.
 
 ## 식별자 체계
 
@@ -35,6 +37,7 @@ opt-in** 한다. 라벨이 없는 컨테이너(redis·mysql·alloy 자기 등)�
 |---|---|---|
 | `service` / `job` | `piki.service` 라벨 | 서비스 식별. `{job="piki-extractor"}` 식 질의 |
 | `instance` | 컨테이너명(선행 슬래시 제거) | blue/green 등 인스턴스 구분 |
+| `container` | 컨테이너명 (cAdvisor 지표만) | 컨테이너 메모리 지표의 컨테이너 구분 |
 | `environment` | `sys.env(ENVIRONMENT)` | 환경 축. dev / staging / prod (기존 유지) |
 | `box` | `sys.env(PIKI_BOX)` = 박스 주인 서비스 | 호스트 메트릭의 박스 구분 (**신설**) |
 | `deployment.environment` | 트레이스 resource attr | Tempo 의 환경 축(메트릭·로그 `environment` 와 같은 결) |
@@ -113,7 +116,7 @@ GH secrets·서비스별 SSM 사본은 폐기됐다 (TeamPiKi/core#771).
 
 ## 버전 핀
 
-- 수집기 이미지는 `grafana/alloy:v1.16.1` 로 고정한다.
+- 수집기 이미지는 `grafana/alloy` 의 한 버전으로 고정한다.
 - **버전 핀의 SSOT 는 `provision-alloy.sh` 의 `--version` default** 다. 문서·config 에 버전
   숫자를 중복해 박지 않는다.
 - provision-alloy.sh 는 기동 **전에** 같은 버전 이미지로 `validate` 게이트를 돌린다 — 잘못된
