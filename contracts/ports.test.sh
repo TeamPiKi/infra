@@ -9,8 +9,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FILE="${1:-$SCRIPT_DIR/ports.json}"
 
-# 박스가 이미 쓰는 포트(sshd·DNS·Alloy OTLP·Alloy UI). 슬롯 포트가 이 값과 겹쳐도 안 된다.
-RESERVED="22 53 4317 4318 12345"
+# 박스가 이미 쓰는 포트(sshd·DNS·Alloy OTLP·Alloy UI·mysqld-exporter·nginx 상태 페이지·nginx-exporter·redis-exporter).
+# 슬롯 포트가 이 값과 겹쳐도 안 된다.
+RESERVED="22 53 4317 4318 12345 9104 9112 9113 9121"
 
 FAILURES=0
 fail() { echo "FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }
