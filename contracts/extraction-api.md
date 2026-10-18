@@ -32,7 +32,9 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 
 ## 2. 엔드포인트
 
-### POST `/internal/extractions/link`
+항목 이름은 proto 의 rpc 이름이고, 경로는 그 rpc 의 `http_post` 옵션이다.
+
+### LinkExtraction
 
 - 지정 모델이 404 면 기본 모델로 대체하고 추출을 이어간다(가용성 우선). 응답 모양은 같고, 대체 사실은
   warn 로그와 `gemini.model.fallback` 카운터에만 남는다.
@@ -40,7 +42,7 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
   바꿔도 풀리지 않는다.
 - 헤더 `X-Correlation-Id`(선택)는 호출자의 item_snapshot id 다. 로그 상관용이고 동작에 영향 없다.
 
-### POST `/internal/extractions/image`
+### ImageExtraction
 
 - 처리 순서는 `download(bucket, key)`, OCR 추출, bbox 크롭(불가 시 원본), `upload(bucket, items/{uuid}.{ext})` 다.
   업로드한 결과의 public URL 이 `imageUrl` 이다.
@@ -48,7 +50,7 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 - 업로드 확장자·content-type 은 결과물을 따른다. 크롭했으면 png, 크롭 불가 포맷(HEIC·WebP·HEIF)은 원본 그대로다.
 - 모델 대체 규칙은 link 와 같다.
 
-### POST `/internal/models/probe`
+### ModelProbe
 
 백오피스가 모델을 저장하기 전에 그 모델이 그 경로에서 실제로 동작하는지 묻는다.
 
@@ -78,14 +80,14 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 | core -> Extractor HTTP read | proto 의 `caller_read_timeout_seconds` (connect 2s) | stale 미만. recover 의 유령 중복 발주 방지. 전 경로 공용 |
 | Extractor 내부 합계 (link) | 약 50s | 아래 합 + 여유 |
 | 대상 몰 fetch (link) | connect 5s / read 15s | |
-| 헤드리스 render (link) | connect 2s / read 20s | 실측 전형 1.6-5.5s 대비 약 4배 여유. headless-first 최악(connect 2 + render 20 + LLM 30 = 약 52s)이 호출자 read 타임아웃 안에 들도록 상한 |
+| 헤드리스 render (link) | connect 2s / read 는 render.proto 의 `caller_read_timeout_seconds` | 실측 전형 1.6-5.5s 대비 약 4배 여유. headless-first 최악(connect + render read + LLM read)이 호출자 read 타임아웃 안에 들도록 상한 |
 | Gemini | read 30s | link LLM fallback·image OCR 동일 |
 | Extractor 내부 합계 (image) | 약 40s | S3 download + Gemini OCR 30s + crop + 결과 upload |
 
 - 안쪽 예산은 항상 바깥보다 작아야 한다. headless-first 합계와 Gemini read 가 호출자 read 타임아웃보다 작은지는
   Extractor 의 테스트가 대조한다.
 - 예외로 에스컬레이션 경로(plain 실패 후 headless)의 최악 스택은 호출자 read 타임아웃을 넘을 수 있다. redirect hop 마다
-  타임아웃이 새로 적용돼 fetch 단독 이론 최악이 약 120s 이고, render 22s 와 LLM 30s 를 더하면 약 172s 다.
+  타임아웃이 새로 적용돼 fetch 단독 이론 최악이 약 120s 이고, 여기에 render 와 LLM read 가 얹힌다.
   넘치면 호출자가 일시 실패로 처리해 재시도하고, Extractor 가 무상태라 중복 발주는 안전하다.
   그 안에 넣으려면 render 예산이 5s 이하가 돼 recall 을 잃는다(의도된 트레이드오프).
 

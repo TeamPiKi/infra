@@ -30,7 +30,7 @@ service RenderService {
 }
 
 message RenderRequest {
-  // 렌더할 URL. http·https 만.
+  // 렌더할 URL. https 만. 브라우저가 도중에 따라가는 http 홉은 막지 않음.
   string url = 1;
   // 플랫폼의 명시적 허락 여부. 판정 원장은 추출 계약의 호출자이고 여기는 전달받기만 함.
   // 생략은 false - 이 필드를 모르는 호출자가 안전한 쪽으로만 어긋남.
