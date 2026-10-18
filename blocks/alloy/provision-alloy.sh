@@ -20,7 +20,7 @@
 #   --name         (필수) Alloy 컨테이너명
 #   --environment  (필수) 환경 라벨 (dev/staging/prod) — 컨테이너에 ENVIRONMENT 로 주입
 #   --box          (필수) 박스 주인 서비스 (piki-core·piki-extractor …) — PIKI_BOX 로 주입
-#   --version      Alloy 이미지 태그. 기본 v1.16.1 — 운영 버전 핀의 SSOT 는 이 default
+#   --version      Alloy 이미지 태그. 아래 VERSION 기본값이 운영 버전 핀의 SSOT
 #   --listen-addr  debug UI(HTTP) bind 주소. 기본 127.0.0.1:12345 — 루프백에만 노출
 #
 # 환경변수 (자격증명 — 필수는 GRAFANA_METRICS_*; 나머지는 있으면 주입):
@@ -42,7 +42,8 @@ CONFIG=""
 NAME=""
 ENVIRONMENT=""
 BOX=""
-VERSION="v1.16.1"
+# v1.20 미만은 cAdvisor 에 컨테이너 한도 도달 횟수(container_memory_events_max_total)가 없다.
+VERSION="v1.20.1"
 LISTEN_ADDR="127.0.0.1:12345"
 
 while [ $# -gt 0 ]; do
@@ -133,6 +134,16 @@ $SUDO mkdir -p "$DATA_DIR"
 TEXTFILE_DIR="/var/lib/node_exporter/textfile"
 $SUDO mkdir -p "$TEXTFILE_DIR"
 
+# ── cAdvisor 마운트 ──
+# cAdvisor 는 cgroup 을 /sys 에서 찾고, docker 컨테이너를 containerd 소켓으로 식별한다(소켓이 없으면 박스 전체만 보고됨).
+# 공식 문서는 privileged 를 요구하지만 dev 박스 실측으로 이 두 마운트만으로 동작함을 확인했다(TeamPiKi/infra#135).
+# 소켓이 없을 때 -v 로 넘기면 docker 가 그 경로에 빈 디렉터리를 만들어 버려 존재할 때만 붙인다.
+CADVISOR_MOUNTS=(-v /sys:/sys:ro)
+CONTAINERD_SOCK="/run/containerd/containerd.sock"
+if [ -S "$CONTAINERD_SOCK" ]; then
+  CADVISOR_MOUNTS+=(-v "$CONTAINERD_SOCK":"$CONTAINERD_SOCK":ro)
+fi
+
 # ── (재)기동 ──
 # --network host: 앱 포트가 127.0.0.1 바인딩이라 호스트 루프백으로 scrape 하고, host-gateway 로 들어오는
 #   앱 OTLP push 를 받는다. 마운트: docker.sock(컨테이너 SD)·/proc·/sys·/(호스트 메트릭). :ro 로 읽기 전용.
@@ -150,6 +161,7 @@ docker run -d --name "$NAME" --restart unless-stopped --network host \
   -v /sys:/host/sys:ro,rslave \
   -v /:/host/root:ro,rslave \
   -v "$TEXTFILE_DIR":/host/textfile:ro \
+  "${CADVISOR_MOUNTS[@]}" \
   -e ENVIRONMENT="$ENVIRONMENT" \
   -e PIKI_BOX="$BOX" \
   -e GRAFANA_METRICS_URL="$METRICS_URL" \

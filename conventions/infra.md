@@ -91,6 +91,8 @@
 - **사람 권한은 평소 권한과 관리자 역할로 나뉜다.** 평소에는 조회·서버 접속·시크릿 읽기만 한다. 관리자
   작업(terraform 등)은 Touch ID 로 로그인한 뒤 20분 안에만 관리자 역할로 바꿀 수 있고, 바꾼 세션은 1시간
   간다. 그룹·역할 정의는 core `terraform/iam_people.tf`.
+  - 예외: `PiKi-Developer` 그룹(AdministratorAccess, terraform 밖에서 관리) 소속은 평소 권한이 곧 관리자라
+    역할을 바꾸지 않는다. 20분 제한도 걸리지 않는다.
 
 ### 노트북 준비 (한 번)
 
@@ -109,6 +111,7 @@ role_arn = arn:aws:iam::<ACCOUNT_ID>:role/piki-admin
 source_profile = piki
 
 # aws login 자격을 직접 못 읽는 도구(terraform 등)용. 관리자 역할로 돈다
+# PiKi-Developer 소속이면 아래 --profile piki-admin 을 --profile piki 로 둔다
 [profile piki-tf]
 region = ap-northeast-2
 credential_process = aws configure export-credentials --profile piki-admin --format process
@@ -130,7 +133,7 @@ Host piki-*
 ```sh
 aws login --profile piki             # 브라우저에서 비밀번호 + Touch ID
 ssh piki-extractor                   # 호스트 이름 = 인스턴스 Name 태그
-AWS_PROFILE=piki-tf terraform plan   # Touch ID 로그인 뒤 20분 안에 시작
+AWS_PROFILE=piki-tf terraform plan   # 관리자 역할 경로면 Touch ID 로그인 뒤 20분 안에 시작
 ```
 
 - 호스트 이름은 Name 태그다: `piki-prod-app`·`piki-dev-app`(core)·`piki-extractor`·`piki-headless-browser`(renderer)·`piki-prod-db`.
