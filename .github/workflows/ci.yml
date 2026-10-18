@@ -62,6 +62,13 @@ jobs:
       - name: Check contracts/ports.json
         run: ./contracts/ports.test.sh
 
+      - name: Check contracts/internal-ranges.txt
+        run: ./contracts/internal-ranges.test.sh
+
+      # 벽 동작은 실제 커널 규칙으로 봐야 해서 privileged dind 안에 서버를 흉내 낸다.
+      - name: Run egress_wall.sh self-test
+        run: REQUIRE_DOCKER=1 ./blocks/egress_wall.test.sh
+
       - name: Run provision-alloy-ssm.sh self-test
         run: ./blocks/alloy/provision-alloy-ssm.test.sh
 

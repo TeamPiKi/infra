@@ -74,6 +74,7 @@ validate_asset() {
     sh)   bash -n "$1" 2>/dev/null ;;
     md)   true ;;
     proto) grep -q '^syntax = "proto3";' "$1" ;;
+    ranges) grep -Eq '^[0-9a-fA-F:.]+/[0-9]+' "$1" ;;
     *)    false ;;   # 알 수 없는 유형은 설치하지 않는다 (안전)
   esac
 }
@@ -227,6 +228,8 @@ if [ "$self" = 0 ] && [ "$workspace" = 0 ]; then
   # 소비 repo 의 빌드가 이 경로를 proto 소스로 읽는다 - 없으면 컴파일이 깨진다.
   install_asset contracts/extraction.proto "$contracts_dir/extraction.proto" 444 proto
   install_asset contracts/render.proto "$contracts_dir/render.proto" 444 proto
+  # extractor 는 빌드가 classpath 에 싣고 renderer 는 기동 때 읽는다 - 없으면 둘 다 뜨지 않는다.
+  install_asset contracts/internal-ranges.txt "$contracts_dir/internal-ranges.txt" 444 ranges
 fi
 
 # 세션 훅·유틸은 사용자 전역 설정이라 repo 안에 둘 자리가 없다. 대신 repo 를 열 때마다 정본으로 맞춘다.

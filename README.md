@@ -35,7 +35,7 @@ blue-green(`deploy_slot.sh`), renderer 는 단일 컨테이너(`run_container.sh
 infra/
   install.sh     # 개발 규약 자산 설치기 (정본) — 자산 목록·설치 위치·실패 처리를 여기만 안다.
                  # 배포 갈래(blocks)는 설치 대상이 아니다 — 각 서비스 deploy 가 원격 fetch 로 소비.
-                 # contracts 도 산문은 같지만, 기계가 읽는 proto 만 소비 repo 의
+                 # contracts 도 산문은 같지만, 기계가 읽는 proto·내부 주소 목록만 소비 repo 의
                  # shared-infra/contracts 로 설치한다 (로컬 참조 편의 — CI 는 checkout 으로 직접 받는다)
   conventions/   # 규약 (서비스 공통 기준선 + 이 repo 자산의 작성 규칙)
     infra.md     # terraform state·컨테이너 배포단위·네트워크 격리
@@ -50,11 +50,14 @@ infra/
     extraction-api.md            # 추출 API 계약 (core -> extractor: 응답 3갈래·동작 규칙·타임아웃 예산)
     extraction.proto             # 그 계약의 와이어 모양·code 분류 정본 (소비 repo 가 빌드 시점에 클래스 생성)
     render.proto                 # 렌더 계약 (extractor -> renderer: 요청·응답 모양·경로·read 타임아웃)
+    internal-ranges.txt          # SSRF 로 막는 내부 주소 목록 (extractor·renderer·서버 방화벽이 함께 읽음)
   blocks/        # 실행 위치 중립 공유 블록 (bash 스크립트 + 관측 설정)
     healthcheck.sh
     healthcheck.test.sh
     run_container.sh
     run_container.test.sh
+    egress_wall.sh   # 컨테이너에서 내부 주소로 나가는 연결을 거절하는 서버 방화벽
+    egress_wall.test.sh
     alloy/       # 관측 수집기(Alloy) 공통 블록 (config.alloy·provision-alloy.sh·provision-alloy-ssm.sh)
   hooks/         # git hooks 정본 (commit-msg) — install.sh 가 각 repo 로 설치
   skills/        # 스킬 정본 (commit·coderabbit·pr·issue·session-check·session-close) — install.sh 가
