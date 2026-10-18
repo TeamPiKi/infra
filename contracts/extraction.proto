@@ -13,8 +13,7 @@ option java_outer_classname = "ExtractionProto";
 option java_package = "com.depromeet.piki.contracts.extraction.v1";
 
 extend google.protobuf.ServiceOptions {
-  // 호출자의 HTTP read 타임아웃(초). 전 경로 공용. Extractor 내부 예산 합계는 이 값보다 작아야 함.
-  // 호출자 쪽 상한은 작업 큐 stale 판정 - 그보다 길면 recover 가 유령 중복 발주를 냄.
+  // 호출자의 HTTP read 타임아웃(초). 전 경로 공용. 예산 사슬과 근거는 extraction-api.md 4절.
   int32 caller_read_timeout_seconds = 50101;
 }
 
@@ -69,9 +68,9 @@ message ModelProbeRequest {
     IMAGE = 2;
   }
 
-  // 필수. 빈 값은 400.
+  // 필수.
   string model = 1;
-  // 필수. 생략·모르는 값은 UNSPECIFIED 로 읽혀 400.
+  // 필수. 생략·모르는 값은 UNSPECIFIED 로 읽힘.
   Target target = 2;
 }
 
@@ -99,7 +98,7 @@ message ExtractionResult {
   ExtractionMethod method = 6;
 }
 
-// 응답 갈래. PERMANENT 는 422(재시도 무의미), TRANSIENT 는 502(호출자 recover 재시도).
+// 응답 갈래. status 매핑과 호출자 전이는 extraction-api.md 1절.
 enum Disposition {
   DISPOSITION_UNSPECIFIED = 0;
   PERMANENT = 1;
