@@ -99,6 +99,8 @@ message ExtractionResult {
 }
 
 // 응답 갈래. status 매핑과 호출자 전이는 extraction-api.md 1절.
+// PERMANENT 는 링크 자체의 사실(형식·사설망·파일 형식)과 프로브 전용 code 뿐. 받은 페이지를 보고 내린 판정은
+// 봇 방어·앱 크래시·빈 셸로 재료가 가짜일 수 있어 전부 TRANSIENT.
 enum Disposition {
   DISPOSITION_UNSPECIFIED = 0;
   PERMANENT = 1;
@@ -133,46 +135,25 @@ extend google.protobuf.EnumValueOptions {
 enum ExtractionErrorCode {
   EXTRACTION_ERROR_CODE_UNSPECIFIED = 0;
 
-  // 상품 페이지가 아닌 문서. 본문 판정 또는 Content-Type 단계의 확정(후자는 본문 미열람).
-  NOT_PRODUCT_PAGE = 1 [
-    (disposition) = PERMANENT,
-    (bucket) = NOT_PRODUCT
-  ];
+  // 받은 문서에 상품이 없음. 본문 판정 또는 Content-Type 단계(후자는 본문 미열람).
+  NOT_PRODUCT_PAGE = 1 [(disposition) = TRANSIENT];
   // url 형식·스킴 위반, 또는 host 조회 실패(DNS 응답 없음). 없는 주소라 헤드리스 승격 대상 밖.
   INVALID_URL = 2 [
     (disposition) = PERMANENT,
     (bucket) = NOT_PRODUCT
   ];
   // fetch 2xx 지만 본문이 데이터 없는 CSR 셸. 헤드리스 승격 대상.
-  EMPTY_SHELL = 3 [
-    (disposition) = PERMANENT,
-    (bucket) = UNREADABLE
-  ];
-  // 가시 텍스트·데이터 script 둘 다 부재. LLM 호출 없이 확정(빈 셸 환각 차단).
-  NO_EXTRACTABLE_CONTENT = 4 [
-    (disposition) = PERMANENT,
-    (bucket) = UNREADABLE
-  ];
+  EMPTY_SHELL = 3 [(disposition) = TRANSIENT];
+  // 가시 텍스트·데이터 script 둘 다 부재. LLM 호출 없이 실패(빈 셸 환각 차단).
+  NO_EXTRACTABLE_CONTENT = 4 [(disposition) = TRANSIENT];
   // 대상 4xx(403 차단·404·429). 봇 방어의 클로킹 가능성.
-  FETCH_CLIENT_ERROR = 5 [
-    (disposition) = PERMANENT,
-    (bucket) = BLOCKED
-  ];
-  // 대상 5xx 중 결정론적 재실패. 대형 몰에서는 장애보다 봇 방어 쪽.
-  PERMANENT_UPSTREAM = 6 [
-    (disposition) = PERMANENT,
-    (bucket) = BLOCKED
-  ];
+  FETCH_CLIENT_ERROR = 5 [(disposition) = TRANSIENT];
+  // 대상 5xx 중 UPSTREAM_ERROR 밖의 것. 대형 몰에서는 장애보다 봇 방어 쪽. 이름은 확정이던 때의 잔재.
+  PERMANENT_UPSTREAM = 6 [(disposition) = TRANSIENT];
   // 범위·상식 위반 값, 또는 값 0건. 일부만 채운 결과는 실패가 아니라 200.
-  UNTRUSTWORTHY_VALUE = 7 [
-    (disposition) = PERMANENT,
-    (bucket) = EXTRACT_QUALITY
-  ];
+  UNTRUSTWORTHY_VALUE = 7 [(disposition) = TRANSIENT];
   // 재시도에도 같은 LLM 실패(4xx·파싱 불가·정책 거부로 text part 부재).
-  LLM_INVALID_RESPONSE = 8 [
-    (disposition) = PERMANENT,
-    (bucket) = EXTRACT_QUALITY
-  ];
+  LLM_INVALID_RESPONSE = 8 [(disposition) = TRANSIENT];
   // image 경로 전용. 빈 이미지·지원 밖 MIME.
   IMAGE_UNSUPPORTED = 9 [
     (disposition) = PERMANENT,
@@ -184,15 +165,9 @@ enum ExtractionErrorCode {
     (bucket) = INTERNAL_ERROR
   ];
   // redirect hop 상한 초과. 무한·체인 의심.
-  TOO_MANY_REDIRECTS = 11 [
-    (disposition) = PERMANENT,
-    (bucket) = INTERNAL_ERROR
-  ];
+  TOO_MANY_REDIRECTS = 11 [(disposition) = TRANSIENT];
   // 3xx 응답에 Location 부재·손상, 또는 https 가 아닌 위치. 헤드리스 승격 대상.
-  MALFORMED_REDIRECT = 12 [
-    (disposition) = PERMANENT,
-    (bucket) = INTERNAL_ERROR
-  ];
+  MALFORMED_REDIRECT = 12 [(disposition) = TRANSIENT];
 
   // 대상 502·503·504, 연결 실패, 빈 body.
   UPSTREAM_ERROR = 13 [(disposition) = TRANSIENT];
