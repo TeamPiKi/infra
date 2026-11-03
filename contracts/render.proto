@@ -37,6 +37,8 @@ message RenderRequest {
   bool authorized = 2;
   // true 면 응답 JSON 을 zstd 로 압축한 바이트로 반환. 압축 여부의 판별은 응답 헤더 X-Encoding.
   bool compress = 3;
+  // 대상 몰에 밝히는 신원. 형식과 기본값은 추출 계약의 같은 필드와 같음(extraction.proto).
+  string identity = 4;
 }
 
 // 판단 없이 거쳐 간 홉을 그대로 돌려줌. 어느 홉이 상품이고 차단인지는 호출자가 정함.
