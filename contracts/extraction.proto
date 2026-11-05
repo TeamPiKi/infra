@@ -100,6 +100,9 @@ message ExtractionResult {
   // link 경로 필수, image 경로 없음.
   optional string final_url = 5;
   ExtractionMethod method = 6;
+  // 할인 전 정가. 안 채움은 "모름", 할인 없는 상품은 current_price 와 같은 값.
+  // 할인율은 호출자가 두 값에서 계산 - 셋을 다 보내면 어긋날 수 있어 정가만 둠. "채웠다" 판정에는 안 들어감.
+  optional int32 original_price = 7;
 }
 
 // 응답 갈래. status 매핑과 호출자 전이는 extraction-api.md 1절.
