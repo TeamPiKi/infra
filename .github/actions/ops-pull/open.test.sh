@@ -184,6 +184,39 @@ check "로그에 URL 없음" no "$(has 'naver')"
 BRANCHES=$(g -C "$ORIGIN" for-each-ref --format='%(refname:short)' refs/heads/autofix | tr '\n' ' ')
 check "origin 의 autofix 브랜치" "autofix/20261015-1 autofix/20261015-7 " "$BRANCHES"
 
+# 5. 패치를 만든 뒤 main 이 바뀜. 실제 실행처럼 얕은 클론에서 돈다. 뒤 패치의 g 와 앞 패치의 문맥 c 를 main 이 고친다
+printf 'a\nb\nc\nd\ne\nf\ng\nh\ni\n' > "$SEED/Bar.txt"
+g -C "$SEED" add Bar.txt
+g -C "$SEED" commit -qm bar
+printf 'a\nb\nc\nd\nE\nf\ng\nh\ni\n' > "$SEED/Bar.txt"
+PATCH_NEAR=$(g -C "$SEED" diff)
+printf 'a\nb\nc\nd\ne\nf\nG\nh\ni\n' > "$SEED/Bar.txt"
+PATCH_SAME_LINE=$(g -C "$SEED" diff)
+printf 'a\nb\nC\nd\ne\nf\nX\nh\ni\n' > "$SEED/Bar.txt"
+g -C "$SEED" commit -qam change
+g -C "$SEED" push -q "$ORIGIN" HEAD:refs/heads/main
+MAIN_SHA=$(g -C "$ORIGIN" rev-parse main)
+entry 20261105-1 extractor "$PATCH_NEAR"      $'문맥이 바뀐 패치\n\n- 본문'
+entry 20261105-2 extractor "$PATCH_SAME_LINE" $'같은 줄을 고친 패치\n\n- 본문'
+REPO="$WORKDIR/shallow"
+g clone -q --depth 1 -b main "file://$ORIGIN" "$REPO"
+check "시험 repo 는 얕은 클론" true "$(g -C "$REPO" rev-parse --is-shallow-repository)"
+
+run true '' --id 20261105-1
+check "문맥이 바뀐 패치도 PR 개시" "0 yes" "$CODE $(has '20261105-1: opened #7')"
+check "main 과 패치의 변경을 둘 다 담음" "abCdEfXhi" "$(g -C "$ORIGIN" show autofix/20261105-1:Bar.txt | tr -d '\n')"
+check "PR 의 변경은 패치의 줄뿐" "-e +E" \
+  "$(g -C "$ORIGIN" diff -U0 autofix/20261105-1~1 autofix/20261105-1 | grep -E '^[-+][^-+]' | tr '\n' ' ' | sed 's/ $//')"
+check "base 는 바뀐 main" "$MAIN_SHA" "$(g -C "$ORIGIN" rev-parse autofix/20261105-1~1)"
+check "적용 로그에 경로 없음" no "$(has 'Bar.txt')"
+
+run true '' --id 20261105-2
+check "같은 줄을 고친 패치 거부" "1 yes" "$CODE $(has '20261105-2: patch does not apply')"
+check "충돌 로그에 경로 없음" no "$(has 'Bar.txt')"
+check "충돌 뒤 checkout 은 base 로 복귀" "$MAIN_SHA" "$(g -C "$REPO" rev-parse HEAD)"
+check "충돌 뒤 작업 트리 깨끗함" "" "$(g -C "$REPO" status --porcelain)"
+check "충돌한 패치는 push 없음" "" "$(g -C "$ORIGIN" for-each-ref refs/heads/autofix/20261105-2)"
+
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES failure(s)" >&2
   exit 1
