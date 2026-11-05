@@ -75,10 +75,16 @@ restore() {
 }
 trap restore EXIT
 
-git fetch -q origin "$BASE"
+# 3-way 는 패치를 만든 시점의 blob 이 필요한데 actions/checkout 의 얕은 클론에는 없다.
+if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+  git fetch -q --unshallow origin "$BASE"
+else
+  git fetch -q origin "$BASE"
+fi
 git checkout -q -f -B "$BRANCH" "origin/$BASE"
 git clean -q -fdx
-git apply --index "$ENTRY/patch.diff" 2>/dev/null || fail "patch does not apply"
+# 승인을 기다리는 동안 main 이 패치 주변을 고쳐도 겹치지 않으면 합친다.
+git apply --3way "$ENTRY/patch.diff" >/dev/null 2>&1 || fail "patch does not apply"
 
 if ! REASON=$("$SCRIPT_DIR/check.sh" "$ENTRY" ${GUARD[@]+"${GUARD[@]}"}); then
   fail "rejected (${REASON:-check error})"

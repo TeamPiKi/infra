@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # ops patches 항목 하나를 PR 로 열어도 되는지 판정한다. 사용법은 action.yml.
-# 현재 디렉토리는 그 항목의 patch.diff 를 git apply --index 로 적용한 checkout 이어야 한다.
+# 현재 디렉토리는 그 항목의 patch.diff 를 적용해 스테이징한 checkout 이어야 한다.
 # 패치 글자가 아니라 git 이 실제로 바꾼 경로·모드로 판정한다. 이스케이프 경로·옛 diff 형식·모드 표기의 해석 차이를 정규식이 따라가지 못한다.
 #
 # 인자:
