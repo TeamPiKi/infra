@@ -41,7 +41,7 @@ g -C "$SEED" push -q "$ORIGIN" HEAD:refs/heads/main
 g clone -q -b main "$ORIGIN" "$REPO"
 MAIN_SHA=$(g -C "$ORIGIN" rev-parse main)
 
-# 승인 대기 실행 목록은 push 된 커밋을 따라 만든다. 201 은 다른 커밋, 202 는 fork, 203 은 다른 이벤트.
+# 실행 목록은 push 된 커밋을 따라 만든다. 201 은 다른 커밋, 202 는 fork, 203 은 다른 이벤트, 204 는 이미 도는 실행.
 FAKE="$WORKDIR/fake"
 mkdir -p "$FAKE"
 cat > "$FAKE/gh" <<'EOF'
@@ -57,20 +57,31 @@ case "$all" in
     b="${all#*head=o:autofix/}"; b="${b%%&*}"
     case " $FAKE_EXISTING " in *" $b "*) echo 1;; *) echo 0;; esac;;
   "api repos/o/extractor/pulls "*) echo 7;;
-  *"status=action_required"*)
+  "api repos/o/extractor/actions/runs?per_page=100")
     if [ -n "$FAKE_NO_RUNS" ]; then echo '{"workflow_runs":[]}'; exit 0; fi
-    b="${all#*branch=}"; b="${b%%&*}"
-    sha=$(git --git-dir="$FAKE_ORIGIN" rev-parse "refs/heads/$b")
+    sha=$(git rev-parse HEAD)
     cat <<JSON
 {"workflow_runs":[
- {"id":101,"head_sha":"$sha","event":"pull_request","head_repository":{"full_name":"o/extractor"}},
- {"id":102,"head_sha":"$sha","event":"pull_request","head_repository":{"full_name":"o/extractor"}},
- {"id":201,"head_sha":"0000000","event":"pull_request","head_repository":{"full_name":"o/extractor"}},
- {"id":202,"head_sha":"$sha","event":"pull_request","head_repository":{"full_name":"x/extractor"}},
- {"id":203,"head_sha":"$sha","event":"push","head_repository":{"full_name":"o/extractor"}}]}
+ {"id":101,"head_sha":"$sha","event":"pull_request","conclusion":"action_required","head_repository":{"full_name":"o/extractor"}},
+ {"id":102,"head_sha":"$sha","event":"pull_request","conclusion":"action_required","head_repository":{"full_name":"o/extractor"}},
+ {"id":201,"head_sha":"0000000","event":"pull_request","conclusion":"action_required","head_repository":{"full_name":"o/extractor"}},
+ {"id":202,"head_sha":"$sha","event":"pull_request","conclusion":"action_required","head_repository":{"full_name":"x/extractor"}},
+ {"id":203,"head_sha":"$sha","event":"push","conclusion":"action_required","head_repository":{"full_name":"o/extractor"}},
+ {"id":204,"head_sha":"$sha","event":"pull_request","conclusion":null,"head_repository":{"full_name":"o/extractor"}}]}
 JSON
     ;;
   *"/approve") ;;
+  "api repos/o/extractor/commits/"*"/check-suites?per_page=100 --jq "*)
+    if [ -n "$FAKE_SUITES_ERROR" ]; then exit 1; fi
+    if [ -n "$FAKE_WAITING" ]; then c=action_required; else c=success; fi
+    # 다른 앱의 승인 대기는 세지 않는다. 마지막 인자인 --jq 식을 그대로 적용해 필터까지 시험한다.
+    jq -r "${*: -1}" <<JSON
+{"check_suites":[
+ {"app":{"slug":"github-actions"},"conclusion":"$c"},
+ {"app":{"slug":"github-actions"},"conclusion":"success"},
+ {"app":{"slug":"other"},"conclusion":"action_required"}]}
+JSON
+    ;;
   *) echo "unexpected gh call: $all" >&2; exit 1;;
 esac
 EOF
@@ -118,6 +129,7 @@ entry 20261015-4 extractor "$PATCH_GH"    $'액션 추가\n\n- 본문'
 entry 20261015-5 extractor "$PATCH_STALE" $'안 맞는 패치\n\n- 본문'
 entry 20261015-6 extractor "$PATCH_OK"    $'URL 포함\n\n- https://naver.me/abc'
 entry 20261015-7 extractor "$PATCH_OK"    $'CI 없음\n\n- 본문'
+entry 20261015-8 extractor "$PATCH_OK"    $'승인 대기 남음\n\n- 본문'
 
 OUT=""
 CODE=0
@@ -128,6 +140,7 @@ run() {
   OUT=$(cd "$REPO" && PATH="$FAKE:$PATH" GITHUB_REPOSITORY=o/extractor GH_TOKEN=x DENY_PATTERN="$deny" \
     FAKE_PRIVATE="$private" FAKE_GH_LOG="$WORKDIR/gh.log" FAKE_BODY="$WORKDIR/body.md" \
     FAKE_EXISTING="20261015-3" FAKE_ORIGIN="$ORIGIN" FAKE_NO_RUNS="${NO_RUNS:-}" \
+    FAKE_WAITING="${WAITING:-}" FAKE_SUITES_ERROR="${SUITES_ERROR:-}" \
     "$OPEN" --patches "$PATCHES" "$@" 2>&1)
   CODE=$?
 }
@@ -158,6 +171,7 @@ check "PR 생성 인자(draft 아님)" yes \
 check "PR 본문은 pr.md 셋째 줄부터" $'## 왜\n\n- 본문 줄' "$(cat "$WORKDIR/body.md")"
 check "승인한 실행" "101 102" "$(grep -oE 'runs/[0-9]+/approve' "$WORKDIR/gh.log" | grep -oE '[0-9]+' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 check "승인은 실행마다 1회" 2 "$(grep -c '/approve' "$WORKDIR/gh.log")"
+check "승인 뒤 남은 대기 확인" 1 "$(grep -c '/check-suites' "$WORKDIR/gh.log")"
 check "checkout 은 base 로 복귀" "$MAIN_SHA" "$(g -C "$REPO" rev-parse HEAD)"
 check "작업 트리 깨끗함" "" "$(g -C "$REPO" status --porcelain)"
 
@@ -175,6 +189,11 @@ check "안 맞는 패치" "1 yes" "$CODE $(has '20261015-5: patch does not apply
 check "거부 뒤 checkout 은 base 로 복귀" "$MAIN_SHA" "$(g -C "$REPO" rev-parse HEAD)"
 NO_RUNS=1 run true '' --id 20261015-7
 check "승인한 CI 0건 -> exit 1" "1 yes yes" "$CODE $(has '20261015-7: opened #7') $(has '20261015-7: no CI run approved')"
+WAITING=1 run true '' --id 20261015-8
+check "승인 대기가 남으면 exit 1" "1 yes yes" \
+  "$CODE $(has '20261015-8: opened #7') $(has '20261015-8: CI run waiting for approval')"
+SUITES_ERROR=1 run true '' --id 20261015-8
+check "남은 대기 조회 실패 -> exit 1" "1 yes" "$CODE $(has '20261015-8: CI approval check failed')"
 
 # 4. 공개 repo 는 URL 검사
 run false 'topsecret' --id 20261015-6
@@ -182,7 +201,7 @@ check "공개 repo 는 URL 거부" "1 yes" "$CODE $(has '20261015-6: rejected (u
 check "로그에 URL 없음" no "$(has 'naver')"
 
 BRANCHES=$(g -C "$ORIGIN" for-each-ref --format='%(refname:short)' refs/heads/autofix | tr '\n' ' ')
-check "origin 의 autofix 브랜치" "autofix/20261015-1 autofix/20261015-7 " "$BRANCHES"
+check "origin 의 autofix 브랜치" "autofix/20261015-1 autofix/20261015-7 autofix/20261015-8 " "$BRANCHES"
 
 # 5. 패치를 만든 뒤 main 이 바뀜. 실제 실행처럼 얕은 클론에서 돈다. 뒤 패치의 g 와 앞 패치의 문맥 c 를 main 이 고친다
 printf 'a\nb\nc\nd\ne\nf\ng\nh\ni\n' > "$SEED/Bar.txt"

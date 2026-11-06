@@ -104,14 +104,15 @@ echo "$ID: opened #$NUMBER"
 
 # GITHUB_TOKEN 이 연 PR 의 pull_request 실행은 승인 대기로 멈추고, 실행은 워크플로마다 시차를 두고 생긴다.
 # 같은 이름의 fork 브랜치 실행을 승인하지 않게 push 한 커밋·이 repo·이벤트로 거른다.
+# branch·head_sha·status 를 건 조회는 승인 대기 실행을 몇 시간이 지나도 빠뜨린 적이 있어(extractor#142) 최근 실행 전체에서 거른다.
 SEEN=" "
 APPROVED=0
 FAILED=0
 for _ in 1 2 3 4 5 6; do
   sleep 10
-  if ! IDS=$(gh api "$API/actions/runs?branch=$BRANCH&event=pull_request&status=action_required" \
+  if ! IDS=$(gh api "$API/actions/runs?per_page=100" \
     | jq -r --arg sha "$SHA" --arg repo "$GITHUB_REPOSITORY" \
-      '.workflow_runs[] | select(.head_sha == $sha and .head_repository.full_name == $repo and .event == "pull_request") | .id'); then
+      '.workflow_runs[] | select(.conclusion == "action_required" and .head_sha == $sha and .head_repository.full_name == $repo and .event == "pull_request") | .id'); then
     FAILED=1
     continue
   fi
@@ -127,3 +128,10 @@ for _ in 1 2 3 4 5 6; do
 done
 [ "$FAILED" = 0 ] || fail "CI approval failed"
 [ "$APPROVED" -gt 0 ] || fail "no CI run approved"
+
+# 일부만 승인하면 빌드가 돌지 않은 PR 이 정상처럼 보인다. 실행 목록과 출처가 다른 check suite 로 남은 대기를 센다.
+sleep 10
+WAITING=$(gh api "$API/commits/$SHA/check-suites?per_page=100" \
+  --jq '[.check_suites[] | select(.app.slug == "github-actions" and .conclusion == "action_required")] | length') \
+  || fail "CI approval check failed"
+[ "$WAITING" = 0 ] || fail "CI run waiting for approval"
