@@ -76,9 +76,9 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 
 | 층 | 값 | 근거 |
 |---|---|---|
-| core stale 판정 | 60s | `ItemParsingScheduler.STALE_TIMEOUT` |
-| core -> Extractor HTTP read | proto 의 `caller_read_timeout_seconds` (connect 2s) | stale 미만. recover 의 유령 중복 발주 방지. 전 경로 공용 |
-| Extractor 내부 합계 (link) | 약 50s | 아래 합 + 여유 |
+| core 회수 기준 | core `ItemParseOutboxQueue` 의 stuckAfter | 이 시간 지나도 PROCESSING 이면 recover 가 다시 발주 |
+| core -> Extractor HTTP read | proto 의 `caller_read_timeout_seconds` (connect 2s) | connect 와 합이 회수 기준 미만(core 가 부팅에서 검사). recover 의 유령 중복 발주 방지. 전 경로 공용 |
+| Extractor 내부 합계 (link) | 호출자 read 타임아웃에서 여유를 뺀 값(`ExtractionDeadline`) | 지나면 render·LLM 단계를 새로 시작하지 않음 |
 | 대상 몰 fetch (link) | connect 5s / read 15s | |
 | 헤드리스 render (link) | connect 2s / read 는 render.proto 의 `caller_read_timeout_seconds` | 실측 전형 1.6-5.5s 대비 약 4배 여유. headless-first 최악(connect + render read + LLM read)이 호출자 read 타임아웃 안에 들도록 상한 |
 | Gemini | read 30s | link LLM fallback·image OCR 동일 |
@@ -86,10 +86,10 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 
 - 안쪽 예산은 항상 바깥보다 작아야 한다. headless-first 합계와 Gemini read 가 호출자 read 타임아웃보다 작은지는
   Extractor 의 테스트가 대조한다.
-- 예외로 에스컬레이션 경로(plain 실패 후 headless)의 최악 스택은 호출자 read 타임아웃을 넘을 수 있다. redirect hop 마다
-  타임아웃이 새로 적용돼 fetch 단독 이론 최악이 약 120s 이고, 여기에 render 와 LLM read 가 얹힌다.
-  넘치면 호출자가 일시 실패로 처리해 재시도하고, Extractor 가 무상태라 중복 발주는 안전하다.
-  그 안에 넣으려면 render 예산이 5s 이하가 돼 recall 을 잃는다(의도된 트레이드오프).
+- 에스컬레이션 경로(plain 실패 후 headless)의 단일 hop 최악(fetch connect + read, render connect + read, LLM read)은
+  호출자 read 타임아웃 안에 든다. 예외는 redirect 누적이다. hop 마다 fetch 타임아웃이 새로 적용돼 fetch 단독 이론
+  최악이 약 120s 라 여기에 render 와 LLM read 가 얹히면 넘는다. 넘치면 호출자가 일시 실패로 처리해 재시도하고,
+  Extractor 가 무상태라 중복 발주는 안전하다.
 
 ## 5. 진화 규칙
 
