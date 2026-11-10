@@ -16,7 +16,7 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 - 재시도·내구성·상태 전이는 호출자의 책임이다. Extractor 는 단건 시도 1회에만 답한다.
 - 에스컬레이션(plain fetch 에서 헤드리스 브라우저로)은 Extractor 내부 관심사라 응답에 드러나지 않는다.
   브라우저를 여는 데는 허락이 필요 없다.
-- 정책 수용 지점은 요청의 `authorized` 하나다. 판정 원장은 호출자이고 Extractor 는 판단 없이 전달한다.
+- 정책 수용 지점은 요청의 `authorized` 와 `blocked_domains` 다. 판정 원장은 호출자이고 Extractor 는 판단하지 않는다.
 
 ## 1. 응답 3갈래
 
@@ -41,6 +41,8 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 - 400·5xx·timeout 은 대체하지 않는다. 400 은 요청 쪽 결함일 수 있어 대체가 버그를 덮고, 나머지는 모델을
   바꿔도 풀리지 않는다.
 - 헤더 `X-Correlation-Id`(선택)는 호출자의 item_snapshot id 다. 로그 상관용이고 동작에 영향 없다.
+- `blocked_domains` 는 요청을 보내기 전에 대조한다. 응답을 받은 뒤 거르면 차단한 곳에 요청이 이미 나간 뒤다.
+  같은 목록을 렌더 서비스에도 넘겨 브라우저의 이동도 같은 규칙을 따른다.
 
 ### ImageExtraction
 
@@ -96,7 +98,7 @@ core(호출자)와 extractor(추출 서비스) 사이의 계약. 구현이 이 �
 - additive-only. 필드·code 추가는 자유, 제거·의미 변경·타입 변경은 금지다(필요하면 새 경로).
   모양 위반은 CI 의 `buf breaking` 이 막는다.
 - code 는 proto enum 에 분류 옵션과 함께 더한다. 소비 repo 의 메타 테스트가 자기 매핑과 대조한다.
-- 배포 순서는 Extractor 먼저, core 나중.
+- 배포 순서는 Extractor 먼저, core 나중. 렌더 계약(`render.proto`)이 함께 바뀌면 renderer 가 Extractor 보다 먼저.
 - 호출자는 모르는 응답 필드·code 를 무시한다(tolerant reader).
 
 ## 6. 관측
