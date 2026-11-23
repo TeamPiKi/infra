@@ -55,9 +55,12 @@ port, work = int(sys.argv[1]), sys.argv[2]
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         ok = self.headers.get('Host', '').startswith('piki.test')
+        body = b'{"status":"ok"}' if ok else b'wrong host'
         self.send_response(200 if ok else 421)
+        # 길이 없이 연결을 끊어 본문 끝을 알리면 OpenSSL 3.5 의 curl 이 TLS 비정상 종료(exit 56)로 본다.
+        self.send_header('Content-Length', str(len(body)))
         self.end_headers()
-        self.wfile.write(b'{"status":"ok"}' if ok else b'wrong host')
+        self.wfile.write(body)
     def log_message(self, *args): pass
 srv = http.server.HTTPServer(('127.0.0.1', port), H)
 ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
