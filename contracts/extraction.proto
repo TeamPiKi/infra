@@ -17,6 +17,11 @@ extend google.protobuf.ServiceOptions {
   int32 caller_read_timeout_seconds = 50101;
 }
 
+extend google.protobuf.MessageOptions {
+  // 이 메시지의 JSON 이 놓이는 Redis 키. 값은 문자열 하나, 만료 없음.
+  string redis_key = 50201;
+}
+
 extend google.protobuf.MethodOptions {
   // HTTP POST 경로. 전송은 gRPC 가 아니라 JSON over HTTP.
   string http_post = 50111;
@@ -35,6 +40,9 @@ service ExtractionService {
   // 통과는 body 없는 200.
   rpc ModelProbe(ModelProbeRequest) returns (google.protobuf.Empty) {
     option (http_post) = "/internal/models/probe";
+  }
+  rpc RuleProbe(RuleProbeRequest) returns (RuleProbeResult) {
+    option (http_post) = "/internal/rules/probe";
   }
 }
 
@@ -84,10 +92,126 @@ message ModelProbeRequest {
   Target target = 2;
 }
 
+// 몰별 추출 규칙의 배포본. 원본은 운영 호출자의 DB 이고 쓰는 쪽도 운영 호출자뿐, Extractor 는 읽기만.
+// 통째로 덮어씀 - 규칙 하나만 바뀌어도 전체를 다시 올림.
+message ExtractionRuleSet {
+  option (redis_key) = "piki:extraction:rules";
+
+  // 덮어쓸 때마다 커지는 값. 로그에서 어느 판이 적용됐는지 가리킴.
+  int64 version = 1;
+  repeated ExtractionRule rules = 2;
+}
+
+// 한 몰 또는 한 쇼핑몰 제작 서비스의 페이지를 읽는 규칙. 적용 순서와 못 읽었을 때의 동작은 extraction-api.md 7절.
+message ExtractionRule {
+  // 받은 문서를 어떻게 얻는가.
+  enum FetchMode {
+    // 기본 흐름. 정적 fetch 가 먼저고 승격은 Extractor 가 판단.
+    FETCH_MODE_UNSPECIFIED = 0;
+    // 대상으로 판정되면 렌더한 문서에서 읽음. 값이 스크립트 실행 뒤에만 생기는 몰.
+    RENDER = 1;
+  }
+
+  // 판매가는 읽었는데 정가의 자리가 어디에도 없을 때의 뜻. 적용 조건은 extraction-api.md 7절.
+  enum AbsentOriginalPrice {
+    // 모름. 다음 층이 채움.
+    ABSENT_ORIGINAL_PRICE_UNSPECIFIED = 0;
+    // 할인 없음. 정가를 판매가와 같은 값으로 채움. 할인 상품에는 정가를 반드시 싣는 몰에만.
+    NO_DISCOUNT = 1;
+  }
+
+  // 원본 행의 id. 로그와 알림이 규칙을 가리키는 값.
+  int64 id = 1;
+
+  // 필수. 둘 다 없거나 값이 빈 규칙은 해석 못 한 규칙.
+  oneof target {
+    // 값과 같은 host 와 그 서브도메인. 문서를 받은 최종 주소로 판정. 비교 규칙은 blocked_domains 와 같음.
+    string host = 2;
+    // 받은 문서에서 이 CSS 선택자에 맞는 요소가 있으면 대상. 여러 몰이 같은 제작 서비스를 쓰는 경우.
+    string marker = 3;
+  }
+
+  FetchMode fetch = 4;
+
+  // 필드별 출처. 생략한 필드는 공통 규칙이 채움.
+  FieldSource name = 5;
+  FieldSource image_url = 6;
+  FieldSource current_price = 7;
+  FieldSource original_price = 8;
+
+  AbsentOriginalPrice absent_original_price = 9;
+}
+
+// 한 필드를 읽는 자리. source 가 없거나 선택자·pointer 가 비면 해석 못 한 규칙.
+// 출처 종류가 늘었을 때 옛 Extractor 가 빈 출처를 "자리 없음" 으로 읽지 않게 하려는 것.
+message FieldSource {
+  oneof source {
+    CssSource css = 1;
+    JsonSource json = 2;
+  }
+}
+
+// 문서의 요소에서 읽음. 맞는 요소가 여럿이면 문서 순서의 첫 요소.
+// 대상 문서에 남는 요소와 글자를 값으로 읽는 법은 extraction-api.md 7절.
+message CssSource {
+  // CSS 선택자. 클래스 뒤 해시가 배포마다 바뀌는 몰은 접두 일치(`[class^=...]`·`[class*=...]`)로 적음.
+  string selector = 1;
+  // 읽을 속성. 생략이면 요소와 그 후손의 글자.
+  string attribute = 2;
+}
+
+// 데이터 스크립트의 JSON 에서 읽음.
+message JsonSource {
+  // 스크립트 요소의 CSS 선택자. 맞는 요소가 여럿이면 문서 순서의 첫 요소.
+  string script = 1;
+  // 그 JSON 안의 위치. RFC 6901 JSON Pointer.
+  string pointer = 2;
+}
+
+// 저장 전 규칙을 실제 상품 주소에 적용해 보는 요청. 배포본을 읽지 않고 요청의 규칙만 씀.
+message RuleProbeRequest {
+  // 필수. 규약은 LinkExtractionRequest.url 과 같음.
+  string url = 1;
+  // 필수.
+  ExtractionRule rule = 2;
+  // 아래 셋의 규약은 LinkExtractionRequest 의 같은 이름 필드와 같음.
+  bool authorized = 3;
+  string identity = 4;
+  repeated string blocked_domains = 5;
+}
+
+// 시험 추출 200 body. 페이지를 받지 못한 경우는 link 경로와 같은 실패 응답.
+message RuleProbeResult {
+  // 한 층이 읽은 값. 못 읽은 필드는 생략. 하나도 없을 수 있음.
+  message Reading {
+    optional string name = 1;
+    optional string image_url = 2;
+    optional int32 current_price = 3;
+    optional int32 original_price = 4;
+  }
+
+  // 규칙의 대상 판정.
+  bool matched = 1;
+  // 규칙이 출처를 적은 필드 가운데 실제로 읽은 값.
+  Reading by_rule = 2;
+  // 같은 문서를 규칙 없이 공통 규칙만으로 읽은 값. LLM 은 부르지 않음.
+  Reading by_common = 3;
+  // 규칙을 해석하지 못한 이유(선택자 문법 오류 등). 있으면 matched 는 false.
+  optional string rule_error = 4;
+  // 문서를 받은 최종 주소.
+  optional string final_url = 5;
+  // 출처를 적었는데 못 읽은 필드. 값은 ExtractionRule 의 필드 이름(JSON 표기).
+  repeated string unread_fields = 6;
+  // 실제 추출이었다면 이 규칙의 값이 버려졌는가.
+  bool discarded = 7;
+  // 실제 추출이었다면 absent_original_price 선언이 정가를 판매가로 채웠는가. by_rule 의 정가에는 싣지 않음.
+  bool no_discount_applied = 8;
+}
+
 // 값을 만든 추출 경로. 호출자의 snapshot 출처(SERVER/SERVER_LLM) 구분 근거.
 enum ExtractionMethod {
   EXTRACTION_METHOD_UNSPECIFIED = 0;
-  // 구조화 데이터(JSON-LD·OpenGraph) 파싱. 결정론적.
+  // 구조화 데이터(JSON-LD·OpenGraph)와 몰별 규칙 파싱. 결정론적.
   STRUCTURED = 1;
   // Gemini 추출. URL 경로의 fallback 과 image 경로.
   LLM = 2;
