@@ -31,6 +31,10 @@ extend google.protobuf.MessageOptions {
   int32 max_deliveries = 50205;
   // 쓴 쪽이 결과를 기다리는 시간(초). 넘으면 쓴 쪽이 스스로 실패로 닫고 늦은 결과는 버림.
   int32 result_deadline_seconds = 50206;
+  // 읽는 쪽이 한 항목을 처리하는 데 쓰는 시간의 상한(초). 읽는 쪽이 지킴.
+  int32 processing_timeout_seconds = 50207;
+  // 읽는 쪽이 이어받을 항목을 찾는 주기의 상한(초).
+  int32 redelivery_scan_interval_seconds = 50208;
 }
 
 extend google.protobuf.MethodOptions {
@@ -92,9 +96,11 @@ message ImageExtractionRequest {
 message ParseRequest {
   option (redis_stream) = "parse:requests";
   option (redis_consumer_group) = "extractor";
-  option (redelivery_after_seconds) = 120;
+  option (redelivery_after_seconds) = 150;
   option (max_deliveries) = 2;
-  option (result_deadline_seconds) = 420;
+  option (result_deadline_seconds) = 600;
+  option (processing_timeout_seconds) = 120;
+  option (redelivery_scan_interval_seconds) = 15;
 
   enum InputType {
     INPUT_TYPE_UNSPECIFIED = 0;

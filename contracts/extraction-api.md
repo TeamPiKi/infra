@@ -213,8 +213,12 @@ null 인 것이다. 값 불량은 자리는 있는데 값을 읽지 못한 것�
 ### 이어받기
 
 - 꺼내 간 소비자가 `redelivery_after_seconds` 안에 확인 응답을 보내지 못하면 같은 그룹의 다른 소비자가 이어받는다.
-- 이 값은 추출 한 건의 최대 시간(4절의 Extractor 내부 합계)보다 커야 한다. 작으면 아직 도는 요청을 다시 꺼내 간다.
-  Extractor 가 기동 때 검사한다.
+- 이 값은 `processing_timeout_seconds` 보다 커야 한다. 작으면 아직 도는 요청을 다시 꺼내 간다.
+- `processing_timeout_seconds` 는 Extractor 가 지키는 값이다. 새 단계를 시작하지 않는 기한(4절의 Extractor 내부 합계)에
+  그 기한 직전에 시작한 가장 긴 단계 하나를 더한 값이 이 안에 들어야 한다. HTTP 경로와 달리 끊어 주는 호출자가 없어
+  한 건의 최대 시간은 기한이 아니라 이 합이다.
+- 이어받을 항목은 `redelivery_scan_interval_seconds` 보다 길지 않은 주기로 찾는다.
+- 위 관계는 전부 Extractor 가 기동 때 검사한다.
 - `max_deliveries` 번 꺼내 가고도 끝나지 않은 항목은 더 추출하지 않고 `DELIVERY_EXHAUSTED` 결과를 쓴 뒤 지운다.
   처리 중에 서버를 죽이는 요청이 끝없이 도는 것을 막는다.
 - 입력 종류를 모르는 요청은 추출하지 않고 `DELIVERY_EXHAUSTED` 결과를 쓴 뒤 지운다.
@@ -224,8 +228,14 @@ null 인 것이다. 값 불량은 자리는 있는데 값을 읽지 못한 것�
 
 - 호출자는 요청을 만든 지 `result_deadline_seconds` 가 지나도록 결과가 없으면 스스로 실패로 닫는다.
   다시 보내지 않는다. 늦게 온 결과는 닫힌 요청의 결과라 버려진다.
-- 이 값은 정상 경로의 최악보다 커야 한다. 최악은 호출자의 첫 전송 지연, 이어받기 대기와 주기를
-  `max_deliveries - 1` 번, 추출 한 건의 최대 시간을 `max_deliveries` 번 더한 값이다. 호출자가 기동 때 검사한다.
+- 이 값은 정상 경로의 최악보다 커야 한다. 호출자가 기동 때 검사한다.
+
+| 항 | 값 | 횟수 |
+|---|---|---|
+| 호출자의 첫 전송 지연 | 호출자의 발행 기록 설정(멈춤 판정·검사 주기·다시 보내기 주기의 합) | 1 |
+| 이어받기까지 | `redelivery_after_seconds` + `redelivery_scan_interval_seconds` | `max_deliveries` - 1 |
+| 추출 한 건 | `processing_timeout_seconds` | `max_deliveries` |
+
 - 요청이나 결과가 Redis 에서 사라진 경우를 닫는 장치는 이것뿐이다.
 
 ### 정책 배포본
